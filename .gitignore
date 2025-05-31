@@ -1,0 +1,4 @@
+prototype/.venv/
+data/
+.direnv/
+.vscode/
