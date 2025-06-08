@@ -5,7 +5,10 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.98"
-ddcutil = "0.0.3"
+# ddcutil = "0.0.4"
 embedded-hal = "1.0.0"
 ftdi-embedded-hal = { version = "0.23.2", features = ["libftd2xx", "libftd2xx-static"] }
 libftd2xx = { version = "0.33.1", features = ["static"] }
+
+# [patch.crates-io]
+# ddcutil = { path = "../../ddcutil-rs" }
