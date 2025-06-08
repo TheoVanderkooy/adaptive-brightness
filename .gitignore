@@ -2,3 +2,6 @@ prototype/.venv/
 data/
 .direnv/
 .vscode/
+
+Cargo.lock
+target/

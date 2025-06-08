@@ -1,11 +1,11 @@
 {
-  description = "A Nix-flake-based C/C++ development environment";
+  description = "Dev flake for adaptive brightness project";
 
   inputs.nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
 
   outputs = inputs:
     let
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      supportedSystems = [ "x86_64-linux" ];
       forEachSupportedSystem = f: inputs.nixpkgs.lib.genAttrs supportedSystems (system: f {
         pkgs = import inputs.nixpkgs { inherit system; };
       });
@@ -19,6 +19,7 @@
           }
           {
             packages = with pkgs; [
+              # C
               clang-tools
               cmake
               codespell
@@ -29,16 +30,25 @@
               lcov
               vcpkg
               vcpkg-tool
+
+              # needed for python libraries
               libusb1
+
+              # rust:
+              cargo rustc rustfmt pre-commit rustPackages.clippy
+
+              # for ddcthingy
+              ddcutil
             ] ++ (if system == "aarch64-darwin" then [ ] else [ gdb ]);
 
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+            ];
+
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libusb1 pkgs.ddcutil ];
+
             # update dynamic lib path: https://discourse.nixos.org/t/what-is-the-nix-way-to-specify-ld-library-path/6407
-            shellHook = ''
-              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.libusb1 ]}:$LD_LIBRARY_PATH"
-            '';
           };
       });
     };
 }
-
-# export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.pcsclite ]}:$LD_LIBRARY_PATH"

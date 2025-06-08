@@ -69,9 +69,14 @@ def target_brightness(lux):
     if i == len(curve)-1 and lux >= curve[-1][0]:
         return curve[-1][1]
 
-   
+
     # interpolate between 2 points
     return curve[i-1][1] + ( (curve[i][1] - curve[i-1][1]) * (lux - curve[i-1][0]) / (curve[i][0] - curve[i-1][0]) )
+
+
+print(f"{sensor.gain=}, {sensor.integration_time=}, {sensor.raw_luminosity=}")
+
+# exit()
 
 
 # sleep to move to nearest 5 minutes (+ 1s)
