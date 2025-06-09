@@ -31,11 +31,13 @@
               vcpkg
               vcpkg-tool
 
-              # needed for python libraries
+              # needed for python libraries (and rust one?)
               libusb1
 
               # rust:
               cargo rustc rustfmt pre-commit rustPackages.clippy
+
+              libftdi1
 
               # for ddcthingy
               ddcutil
@@ -44,8 +46,10 @@
             nativeBuildInputs = with pkgs; [
               pkg-config
             ];
+            # python version needs this explicitly
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libusb1 ];
 
-            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libusb1 pkgs.ddcutil ];
+            # LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libusb1 pkgs.ddcutil pkgs.libftdi1 ];
 
             # update dynamic lib path: https://discourse.nixos.org/t/what-is-the-nix-way-to-specify-ld-library-path/6407
           };

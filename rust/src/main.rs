@@ -21,9 +21,16 @@ fn set_brightness(pct: u32) -> Result<(), anyhow::Error> {
 
 fn main() -> Result<(), anyhow::Error> {
     // Connect to the device
-    let device: libftd2xx::Ft232h = libftd2xx::Ftdi::new()?.try_into()?;
+    let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
+        .interface(ftdi::Interface::A)
+        .open()?;
     let i2c = hal::FtHal::init_default(device)?.i2c()?;
     let mut sensor = TSL2591::from_i2c(i2c)?;
+
+    // VendorId = 0x0403
+    // ProductId = 0x6014
+    // Description = USB <-> Serial Converter
+    // SerialNumber = FTA3Q3CS
 
     let curve = BrightnessCurve::from_steps(vec![(0, 10), (250, 100)]);
 

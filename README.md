@@ -1,5 +1,3 @@
-TODO...
-
 Adaptive Brightness
 ===================
 This uses an external brightness sensor to implement adaptive brightness for desktop external monitors.
@@ -11,11 +9,9 @@ Hardware
 - Intermediate board to translate USB <-> I2C: FT232H breakout board from adafruit
 
 
-
-
 UDEV rules
 ----------
-The following udev rules are needed to connect to the USB device. (actually onlt one of these applies, but I don't remember which one specifically)
+The following udev rules are needed to connect to the USB device. (only the product ID = 6014 is relevant for the FT232H, the rest are other similar chips)
 ```
 SUBSYSTEM=="usb", ATTR{idVendor}=="0403", ATTR{idProduct}=="6001", GROUP="plugdev", MODE="0666"
 SUBSYSTEM=="usb", ATTR{idVendor}=="0403", ATTR{idProduct}=="6011", GROUP="plugdev", MODE="0666"
