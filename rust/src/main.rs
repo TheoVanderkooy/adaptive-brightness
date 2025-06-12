@@ -13,6 +13,7 @@ fn set_brightness(pct: u32) -> Result<(), anyhow::Error> {
     let res = process::Command::new("ddcutil")
         .args(["--bus=6", "setvcp", "10", &pct.to_string()])
         .status()?;
+
     if !res.success() {
         anyhow::bail!("Got unexpected return from ddcutil: {res:?}")
     }
@@ -46,16 +47,31 @@ fn main() -> Result<(), anyhow::Error> {
     set_brightness(cur_b)?;
 
     loop {
+        let sleep_time: u64;
         let lux = sensor.read_lux()? as u32;
         let target = curve.target_brightness(lux);
-        let new_b = if i32::abs(target as i32 - cur_b as i32) <= 1 {
-            target
+        let change = target as i32 - cur_b as i32;
+
+        let new_b;
+        if i32::abs(change) <= 1 {
+            sleep_time = 5_000;
+            new_b = target;
         } else {
-            (target + cur_b) / 2
-        };
-        cur_b = new_b;
+            new_b = if target > cur_b {
+                cur_b + 1
+            } else {
+                cur_b - 1
+            };
+
+            // sleep time doesn't matter much right now because setting the brightness has high latency already
+            sleep_time = 100;
+        }
+
         println!("lux={lux}, target={target}, setting={new_b}");
-        set_brightness(new_b)?;
-        thread::sleep(time::Duration::from_millis(5_000));
+        if new_b != cur_b {
+            set_brightness(new_b)?;
+        }
+        cur_b = new_b;
+        thread::sleep(time::Duration::from_millis(sleep_time));
     }
 }
