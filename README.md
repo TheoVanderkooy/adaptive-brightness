@@ -2,6 +2,10 @@ Adaptive Brightness
 ===================
 This uses an external brightness sensor to implement adaptive brightness for desktop external monitors.
 
+Repo
+----
+Stuff under `python/` is a prototype & test scripts. The actual project is under `rust/`.
+
 
 Hardware
 --------
@@ -24,3 +28,8 @@ If that isn't enough on its own, you may need to unload built-in ftdi drivers:
 ```sh
 sudo rmmod ftdi_sio
 ```
+
+Resources
+---------
+- [TSL2591 datsheet](https://cdn-shop.adafruit.com/datasheets/TSL25911_Datasheet_EN_v1.pdf)
+- Adafruit TSL2591 board [datasheet](https://cdn-learn.adafruit.com/downloads/pdf/adafruit-tsl2591.pdf)

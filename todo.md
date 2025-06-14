@@ -8,3 +8,6 @@
   - [x] need udev rules to unload the vcp driver when attaching the thingy?
 - [ ] interface to plasma libs for software brighness on second monitor?
 - [ ] put brightness curve in a config file?
+
+
+- "error=Io(Custom { kind: Other, error: "libusb error code -1" })" error = restartable
