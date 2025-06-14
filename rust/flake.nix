@@ -13,9 +13,32 @@
     {
       devShells = forEachSupportedSystem ({ pkgs }: {
         default = pkgs.mkShell          {
-            packages = with pkgs; [
-              cargo rustc rustfmt pre-commit rustPackages.clippy rust-analyzer
+          packages = with pkgs; [
+            cargo rustc rustfmt pre-commit rustPackages.clippy rust-analyzer
 
+            libftdi1
+            ddcutil
+            libusb1
+          ];
+
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+          ];
+        };
+      });
+
+      packages = forEachSupportedSystem ({ pkgs }: {
+        default =
+        let
+          manifest = (pkgs.lib.importTOML ./Cargo.toml).package;
+        in
+          pkgs.rustPlatform.buildRustPackage {
+            pname = manifest.name;
+            version = manifest.version;
+            cargoLock.lockFile = ./Cargo.lock;
+            src = pkgs.lib.cleanSource ./.;
+
+            buildInputs = with pkgs; [
               libftdi1
               ddcutil
               libusb1
@@ -24,7 +47,7 @@
             nativeBuildInputs = with pkgs; [
               pkg-config
             ];
-          };
+        };
       });
     };
 }
