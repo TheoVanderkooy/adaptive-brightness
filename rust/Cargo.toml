@@ -10,4 +10,4 @@ ftdi = "0.1.3"
 ftdi-embedded-hal = { version = "0.23.2", features = ["ftdi"] }
 ron = "0.10.1"
 serde = { version = "1.0.219", features = ["derive"] }
-xdg-dirs-rs = { git = "https://github.com/TheoVanderkooy/xdg-dirs-rs.git", version = "0.1.1" }
+xdg-dirs = { git = "https://github.com/TheoVanderkooy/xdg-dirs-rs.git", version = "0.1.2" }

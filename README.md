@@ -2,6 +2,31 @@ Adaptive Brightness
 ===================
 This uses an external brightness sensor to implement adaptive brightness for desktop external monitors. It simply polls the current brightness every 5s, and adjusts the monitor brightness accordingly. This is intended to be run as a systemd (or similar) service, and relies on the to restart it in case of failures. (for example on resume from sleep, it will get a USB IO error and needs to reconnect to the sensor. Restarting the whole process is an easy way to do this) Stuff under `python/` is a prototype & test scripts. The actual project is under `rust/`.
 
+Configuration
+-------------
+Configuration goes in `~/.config/adaptive-brightness/config.ron`. (or more specifically, `adaptive-brightness/config.ron` under your [XDG](https://specifications.freedesktop.org/basedir-spec/latest/) config directory)
+
+The configuration file is formatted as [rust object notation (RON)](https://docs.rs/ron/latest/ron/). This was chosen because it was convenient, but also it was hard to find anything else that could represent the lux -> brightness mapping of the brightness curve in a not-too-ugly way.
+
+The general configuration structure is:
+```
+(
+    monitors: [
+        (
+            identifier: <identifier>,
+            curve: [
+                (<lux_1>, <brightness_1>),
+                (<lux_2>, <brightness_2>),
+                ...
+            ],
+        ),
+        ...
+    ]
+)
+```
+where there could be multiple monitors in the list, one or more (lux, brightness) pairs for each curve, and `<identifier>` is an enum representing how to identify the monitor(s) that should follow that particular curve. For now, only `Bus(bus_id: int)` works, to specify the exact I2C bus the monitor is connected to.
+
+
 Hardware
 --------
 - Brightness sensor: TSL2591 breakout board from adafruit

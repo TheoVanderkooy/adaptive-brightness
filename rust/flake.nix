@@ -35,7 +35,11 @@
           pkgs.rustPlatform.buildRustPackage {
             pname = manifest.name;
             version = manifest.version;
-            cargoLock.lockFile = ./Cargo.lock;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              # this is to avoid needing to specify outputHashes for my own libraries pulled from github
+              allowBuiltinFetchGit = true;
+            };
             src = pkgs.lib.cleanSource ./.;
 
             buildInputs = with pkgs; [

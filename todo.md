@@ -23,6 +23,8 @@
   - [ ] fatal vs retryable errors
   - [ ] config file changes?
   - [ ] notify on error?
+- [ ] proper logging library?
+- [ ] home-manager module?
 
 
 - "error=Io(Custom { kind: Other, error: "libusb error code -1" })" error = restartable

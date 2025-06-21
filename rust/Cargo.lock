@@ -12,7 +12,7 @@ dependencies = [
  "ftdi-embedded-hal",
  "ron",
  "serde",
- "xdg-dirs-rs",
+ "xdg-dirs",
 ]
 
 [[package]]
@@ -436,9 +436,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
-name = "xdg-dirs-rs"
-version = "0.1.1"
-source = "git+https://github.com/TheoVanderkooy/xdg-dirs-rs.git#5dbfc0096213928e612d5a0b1e2bf3356df1d2b4"
+name = "xdg-dirs"
+version = "0.1.2"
+source = "git+https://github.com/TheoVanderkooy/xdg-dirs-rs.git#14d18d8416f4f76513a2ff0a7fbf81c9359f69b2"
 dependencies = [
  "serial_test",
  "thiserror 2.0.12",

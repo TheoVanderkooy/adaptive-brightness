@@ -1,4 +1,6 @@
 /// Represents a piece-wise linear function and can be evaluated at a point.
+
+#[derive(Debug)]
 pub struct PiecewiseLinear {
     curve: Vec<(u32, u32)>,
 }

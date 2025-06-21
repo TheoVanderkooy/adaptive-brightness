@@ -1,4 +1,7 @@
 use serde::Deserialize;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub enum MonitorId {
@@ -10,13 +13,23 @@ pub enum MonitorId {
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct MonitorConfig {
-    identifier: MonitorId,
-    curve: Vec<(u32, u32)>,
+    pub identifier: MonitorId,
+    pub curve: Vec<(u32, u32)>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Config {
-    monitors: Vec<MonitorConfig>,
+    pub monitors: Vec<MonitorConfig>,
+}
+
+impl Config {
+    pub fn from_str(conf: &str) -> Result<Self, anyhow::Error> {
+        Ok(ron::from_str::<Config>(conf)?)
+    }
+
+    pub fn read_from_file<P: AsRef<Path>>(file: P) -> Result<Self, anyhow::Error> {
+        Ok(ron::de::from_reader(BufReader::new(File::open(file)?))?)
+    }
 }
 
 /*
@@ -24,10 +37,10 @@ TODO:
  - reading from config file
 */
 
-#[test]
-fn test_deserialize_config() {
-    let parsed: Config = ron::from_str(
-        r#"
+#[cfg(test)]
+mod test {
+    use super::*;
+    const TEST_CONFIG: &str = r#"
         (
         monitors: [
             (
@@ -45,23 +58,26 @@ fn test_deserialize_config() {
             ),
         ]
         )
-    "#,
-    )
-    .unwrap();
+    "#;
 
-    assert_eq!(
-        parsed,
-        Config {
-            monitors: vec![
-                MonitorConfig {
-                    identifier: MonitorId::Model("xyz".to_string()),
-                    curve: vec![(0, 10), (250, 100)],
-                },
-                MonitorConfig {
-                    identifier: MonitorId::Bus(6),
-                    curve: vec![(0, 50)],
-                },
-            ]
-        }
-    );
+    #[test]
+    fn test_deserialize_config() {
+        let parsed: Config = ron::from_str(TEST_CONFIG).unwrap();
+
+        assert_eq!(
+            parsed,
+            Config {
+                monitors: vec![
+                    MonitorConfig {
+                        identifier: MonitorId::Model("xyz".to_string()),
+                        curve: vec![(0, 10), (250, 100)],
+                    },
+                    MonitorConfig {
+                        identifier: MonitorId::Bus(6),
+                        curve: vec![(0, 50)],
+                    },
+                ]
+            }
+        );
+    }
 }

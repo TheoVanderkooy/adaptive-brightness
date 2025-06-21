@@ -1,79 +1,87 @@
-mod piecewise_linear;
-use piecewise_linear::*;
+// in-crate modules
 mod config;
-use config::*;
-
-use std::{process, thread, time};
-
-use ftdi_embedded_hal as hal;
-
+mod monitor;
+mod piecewise_linear;
 mod tsl2591;
+
+// in-crate imports
+use config::*;
+use monitor::*;
+use piecewise_linear::*;
 use tsl2591::TSL2591;
 
-struct MonitorState {
-    bus: u32,
-    curve: PiecewiseLinear,
+// my libraries
+use xdg_dirs::{dirs, xdg_location_of};
 
-    brightness: u32,
-}
+// STD
+use std::{thread, time};
 
-impl MonitorState {
-    fn for_bus(bus: u32, curve: PiecewiseLinear) -> Self {
-        MonitorState {
-            bus,
-            curve,
-            brightness: 0,
-        }
-    }
-}
+// 3rd party libraries
+use ftdi_embedded_hal as hal;
 
-fn set_brightness(monitor: &mut MonitorState, pct: u32) -> Result<(), anyhow::Error> {
-    let pct = pct.clamp(0, 100);
-    let res = process::Command::new("ddcutil")
-        .args([
-            "--bus",
-            &monitor.bus.to_string(),
-            "setvcp",
-            "10",
-            &pct.to_string(),
-        ])
-        .status()?;
-
-    if !res.success() {
-        anyhow::bail!("Got unexpected return from ddcutil: {res:?}")
-    }
-
-    monitor.brightness = pct;
-    Ok(())
-}
-
-/// Update monitor brightness for the given lux value.
-///
-/// Returns true if brightness was changed, false otherwise.
-fn update_brightness(monitor: &mut MonitorState, lux: u32) -> Result<bool, anyhow::Error> {
-    let target = monitor.curve.eval(lux);
-    let cur = monitor.brightness;
-    let change = target as i32 - cur as i32;
-
-    let new_b;
-    if i32::abs(change) <= 1 {
-        new_b = target;
-    } else {
-        new_b = if target > cur { cur + 1 } else { cur - 1 };
-    }
-
-    if new_b != cur {
-        println!("lux={lux}, target={target}, setting={new_b}");
-        set_brightness(monitor, new_b)?;
-
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
+const DEFAULT_CONFIG: &str = r#"
+    (
+    monitors: [
+        (
+            identifier: Bus(6),
+            curve: [
+                (0, 10),
+                (250, 100),
+            ],
+        ),
+    ]
+    )
+"#;
 
 fn main() -> Result<(), anyhow::Error> {
-    // Connect to the device
+    // // ... this depends on `ddca_get_display_info_list`, which is not present in the library :/ (it has version2 instead)
+    // // see `ldconfig -p` to find dynamic library path, then `nm -D` to find the symbols in the library
+    // // https://github.com/arcnmx/ddcutil-rs/issues/2
+    // let displays = ddcutil::DisplayInfo::enumerate();
+    // for d in &displays? {
+    //     println!("{d:#?}")
+    // }
+
+    // return Ok(());
+    // #[allow(unreachable_code)]
+
+    // Read in configuration, or load default configuration
+    let config_location = xdg_location_of(&dirs::CONFIG, "adaptive-brightness/config.ron");
+    let config = match config_location {
+        Ok(path) => {
+            println!("Reading config from {path}", path = path.display());
+            Config::read_from_file(path)?
+        }
+        Err(err) => {
+            println!(
+                "Config file not found in any standard locations, using default configuration."
+            );
+            println!("  Config search error: {err}");
+            Config::from_str(DEFAULT_CONFIG)?
+        }
+    };
+    println!("Loaded configuration: {config:?}");
+
+    // Construct monitor states based on the configuration
+    let mut monitors: Vec<MonitorState> = config
+        .monitors
+        .into_iter()
+        .map(|mc| -> Result<MonitorState, anyhow::Error> {
+            let curve = PiecewiseLinear::from_steps(mc.curve).ok_or_else(|| {
+                anyhow::anyhow!("Invalid brightness curve for monitor {0:?}", mc.identifier)
+            })?;
+
+            Ok(match mc.identifier {
+                MonitorId::Bus(bus_id) => MonitorState::for_bus(bus_id, curve),
+                // TODO: match monitors by other properties
+                MonitorId::Default => todo!(),
+                MonitorId::Model(_) => todo!(),
+                MonitorId::Serial(_) => todo!(),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Connect to the brightness sensor
     let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
         .interface(ftdi::Interface::A)
         .open()?;
@@ -85,30 +93,21 @@ fn main() -> Result<(), anyhow::Error> {
     // Description = USB <-> Serial Converter
     // SerialNumber = FTA3Q3CS
 
-    // TODO read brightness curve from a config file
-    let curve = PiecewiseLinear::from_steps(vec![(0, 10), (250, 100)]).unwrap();
-    let mut monitors: Vec<MonitorState> = vec![MonitorState::for_bus(6, curve)];
-
-    // // ... this depends on `ddca_get_display_info_list`, which is not present in the library :/ (it has version2 instead)
-    // // see `ldconfig -p` to find dynamic library path, then `nm -D` to find the symbols in the library
-    // // https://github.com/arcnmx/ddcutil-rs/issues/2
-    // let displays = ddcutil::DisplayInfo::enumerate();
-    // for d in &displays? {
-    //     println!("{d:#?}")
-    // }
-
+    // Set initial brightness based on current state
     let lux = sensor.read_lux()? as u32;
     for m in &mut monitors {
-        update_brightness(m, lux)?;
+        m.set_brightness_for_lux(lux)?;
     }
 
+    // Main loop: periodically wake up to update all monitors
     loop {
         let mut updated = false;
 
         for m in &mut monitors {
-            updated = updated || update_brightness(m, lux)?;
+            updated = updated || m.update_brightness(lux)?;
         }
 
+        // Don't sleep as long if we may be off-target
         thread::sleep(time::Duration::from_millis(if updated {
             100
         } else {
@@ -117,6 +116,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 }
 
+// TODO remove test code
 #[ignore]
 #[test]
 fn test_testing() {
