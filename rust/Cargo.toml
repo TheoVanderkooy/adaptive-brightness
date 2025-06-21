@@ -5,10 +5,9 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.98"
-# ddcutil = "0.0.4"
 embedded-hal = "1.0.0"
 ftdi = "0.1.3"
 ftdi-embedded-hal = { version = "0.23.2", features = ["ftdi"] }
-
-# [patch.crates-io]
-# ddcutil = { path = "../../ddcutil-rs" }
+ron = "0.10.1"
+serde = { version = "1.0.219", features = ["derive"] }
+xdg-dirs-rs = { git = "https://github.com/TheoVanderkooy/xdg-dirs-rs.git", version = "0.1.1" }
