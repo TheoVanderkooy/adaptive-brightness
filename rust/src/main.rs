@@ -11,11 +11,13 @@ use piecewise_linear::*;
 use tsl2591::TSL2591;
 
 // my libraries
-use xdg_dirs::{dirs, xdg_location_of};
+use xdg_dirs::{dirs, xdg_location_of, xdg_user_dir};
 
+use std::fs::File;
+use std::io::Write;
 // STD
 use std::path::PathBuf;
-use std::{thread, time};
+use std::{fs, thread, time};
 
 // 3rd party libraries
 use anyhow::Context;
@@ -25,18 +27,35 @@ use ftdi_embedded_hal as hal;
 const CONFIG_PATH: &str = "adaptive-brightness/config.ron";
 
 const DEFAULT_CONFIG: &str = r#"
+(
+monitors: [
     (
-    monitors: [
-        (
-            identifier: Bus(6),
-            curve: [
-                (0, 10),
-                (250, 100),
-            ],
-        ),
-    ]
-    )
+        identifier: Bus(6),
+        curve: [
+            (0, 10),
+            (250, 100),
+        ],
+    ),
+]
+)
 "#;
+
+#[derive(Debug, Subcommand, PartialEq)]
+enum Command {
+    #[command(
+        about = "(default) Poll brightness sensor value and periodically update monitor brightness based on the config file."
+    )]
+    Run,
+
+    #[command(about = "Verify the config file")]
+    TestConfig,
+
+    #[command(about = "Generate a default config file")]
+    GenConfig,
+    // TODO:
+    //  - detecting monitors (... or at least tell them (how to) to use ddcutil)
+    //  - directly set brightness?
+}
 
 #[derive(Debug, Parser, PartialEq)]
 #[command(
@@ -57,38 +76,29 @@ struct Args {
     command: Option<Command>,
 }
 
-#[derive(Debug, Subcommand, PartialEq)]
-enum Command {
-    #[command(
-        about = "(default) Poll brightness sensor value and periodically update monitor brightness based on the config file."
-    )]
-    Run,
+impl Args {
+    /// Get the config path, and verify the file exists. This is the either the path passed as an arg, or from the XDG directory if not specified.
+    ///
+    /// This returns error if the path does not exist.
+    fn get_config_path(&self) -> Result<PathBuf, anyhow::Error> {
+        match &self.config_path {
+            Some(path) => {
+                let path = path
+                    .canonicalize()
+                    .with_context(|| format!("Could not open config file `{0}`", path.display()));
 
-    #[command(about = "Verify the config file")]
-    TestConfig,
-    // TODO:
-    //  - detecting monitors (... or at least tell them (how to) to use ddcutil)
-    //  - directly set brightness?
-    //  - generate default config file based on connected monitors
+                path
+            }
+            None => xdg_location_of(&dirs::CONFIG, CONFIG_PATH)
+                .with_context(|| "Could not open config file"),
+        }
+    }
 }
 
 fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
 
     println!("args = {args:?}");
-
-    // Decide on config file path: from CLI args if set, else default config file location
-    let config_file_path = match args.config_path {
-        Some(path) => {
-            let path = path
-                .canonicalize()
-                .with_context(|| format!("Could not open config file `{0}`", path.display()));
-
-            path
-        }
-        None => xdg_location_of(&dirs::CONFIG, CONFIG_PATH)
-            .with_context(|| "Could not open config file"),
-    };
 
     // process commands
     match args.command {
@@ -97,7 +107,9 @@ fn main() -> Result<(), anyhow::Error> {
 
         // Test config file: make sure it exists, can be read, and can be parsed
         Some(Command::TestConfig) => {
-            let path = config_file_path.with_context(|| "Failed to find config file")?;
+            let path = args
+                .get_config_path()
+                .with_context(|| "Failed to find config file")?;
             println!("Attempting to load config from `{0}`", path.display());
             let conf =
                 Config::read_from_file(path).with_context(|| "Failed to parse configuration")?;
@@ -105,10 +117,42 @@ fn main() -> Result<(), anyhow::Error> {
 
             return Ok(());
         }
+
+        // Generate config file: if the file does not already exist, write
+        Some(Command::GenConfig) => {
+            // CLI arg path, or default from environment
+            let path = args
+                .config_path
+                .clone()
+                .map_or_else(|| xdg_user_dir(&dirs::CONFIG, CONFIG_PATH), Ok)
+                .with_context(|| "Could not determine location for config file")?;
+
+            // Create parent directory path if applicable
+            match path.parent() {
+                Some(parent) => fs::create_dir_all(parent).with_context(|| {
+                    format!(
+                        "Failed to create parent directory of the new config file {0}",
+                        path.display()
+                    )
+                })?,
+                _ => { /* do nothing if no parent */ }
+            };
+
+            // Create the new file and write the default contents
+            let mut file = File::create_new(&path)
+                .with_context(|| format!("Failed to create new config file {0}", path.display()))?;
+
+            // TODO eventually have a more intelligent default config file (e.g. based on current set of monitors)
+            write!(file, "{}", DEFAULT_CONFIG).with_context(|| {
+                format!("Failed to write the new config file {0}", path.display())
+            })?;
+
+            return Ok(());
+        }
     };
 
     // Read in configuration, or load default configuration
-    let config = match config_file_path {
+    let config = match args.get_config_path() {
         Ok(path) => {
             println!("Reading config from {path}", path = path.display());
             Config::read_from_file(path)?

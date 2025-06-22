@@ -20,6 +20,7 @@ pub struct MonitorConfig {
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Config {
     pub monitors: Vec<MonitorConfig>,
+    // TODO: could configure brightness sensor (different intermediate chips (vid,pid), maybe implement different sensors)
 }
 
 impl Config {
