@@ -102,55 +102,65 @@ fn main() -> Result<(), anyhow::Error> {
 
     // process commands
     match args.command {
-        // Primary behaviour, fall-through to the rest of the function
-        None | Some(Command::Run) => {}
+        // Primary behaviour: releatedly read brightness and update monitors
+        None | Some(Command::Run) => main_loop(&args),
 
         // Test config file: make sure it exists, can be read, and can be parsed
-        Some(Command::TestConfig) => {
-            let path = args
-                .get_config_path()
-                .with_context(|| "Failed to find config file")?;
-            println!("Attempting to load config from `{0}`", path.display());
-            let conf =
-                Config::read_from_file(path).with_context(|| "Failed to parse configuration")?;
-            println!("Successfully read config: {conf:#?}");
-
-            return Ok(());
-        }
+        Some(Command::TestConfig) => check_config(&args),
 
         // Generate config file: if the file does not already exist, write
-        Some(Command::GenConfig) => {
-            // CLI arg path, or default from environment
-            let path = args
-                .config_path
-                .clone()
-                .map_or_else(|| xdg_user_dir(&dirs::CONFIG, CONFIG_PATH), Ok)
-                .with_context(|| "Could not determine location for config file")?;
+        Some(Command::GenConfig) => return gen_config_file(&args),
+    }
+}
 
-            // Create parent directory path if applicable
-            match path.parent() {
-                Some(parent) => fs::create_dir_all(parent).with_context(|| {
-                    format!(
-                        "Failed to create parent directory of the new config file {0}",
-                        path.display()
-                    )
-                })?,
-                _ => { /* do nothing if no parent */ }
-            };
+/// Verify the config file: Make sure it can be found at the expected location (passed through CLI or using XDG config location), and parses properly.
+fn check_config(args: &Args) -> Result<(), anyhow::Error> {
+    // Try to _find_ the config file
+    let path = args
+        .get_config_path()
+        .with_context(|| "Failed to find config file")?;
 
-            // Create the new file and write the default contents
-            let mut file = File::create_new(&path)
-                .with_context(|| format!("Failed to create new config file {0}", path.display()))?;
+    // Try to _parse_ the config file
+    println!("Attempting to load config from `{0}`", path.display());
+    let conf = Config::read_from_file(path).with_context(|| "Failed to parse configuration")?;
 
-            // TODO eventually have a more intelligent default config file (e.g. based on current set of monitors)
-            write!(file, "{}", DEFAULT_CONFIG).with_context(|| {
-                format!("Failed to write the new config file {0}", path.display())
-            })?;
+    println!("Successfully read config: {conf:#?}");
+    Ok(())
+}
 
-            return Ok(());
-        }
+/// Generate a default configuration file, at the expected location based on args or environment variables.
+fn gen_config_file(args: &Args) -> Result<(), anyhow::Error> {
+    // CLI arg path, or default from environment
+    let path = args
+        .config_path
+        .clone()
+        .map_or_else(|| xdg_user_dir(&dirs::CONFIG, CONFIG_PATH), Ok)
+        .with_context(|| "Could not determine location for config file")?;
+
+    // Create parent directory path if applicable
+    match path.parent() {
+        Some(parent) => fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "Failed to create parent directory of the new config file {0}",
+                path.display()
+            )
+        })?,
+        _ => { /* do nothing if no parent */ }
     };
 
+    // Create the new file and write the default contents
+    let mut file = File::create_new(&path)
+        .with_context(|| format!("Failed to create new config file {0}", path.display()))?;
+
+    // Create the new file and write the default contents
+    write!(file, "{}", DEFAULT_CONFIG)
+        .with_context(|| format!("Failed to write the new config file {0}", path.display()))?;
+
+    Ok(())
+}
+
+/// Default daemon behaviour: Read config file, then read brightness and update each monitor forever.
+fn main_loop(args: &Args) -> Result<(), anyhow::Error> {
     // Read in configuration, or load default configuration
     let config = match args.get_config_path() {
         Ok(path) => {
