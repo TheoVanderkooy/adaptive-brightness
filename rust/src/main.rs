@@ -14,10 +14,15 @@ use tsl2591::TSL2591;
 use xdg_dirs::{dirs, xdg_location_of};
 
 // STD
+use std::path::PathBuf;
 use std::{thread, time};
 
 // 3rd party libraries
+use anyhow::Context;
+use clap::{Parser, Subcommand, command};
 use ftdi_embedded_hal as hal;
+
+const CONFIG_PATH: &str = "adaptive-brightness/config.ron";
 
 const DEFAULT_CONFIG: &str = r#"
     (
@@ -33,30 +38,86 @@ const DEFAULT_CONFIG: &str = r#"
     )
 "#;
 
-fn main() -> Result<(), anyhow::Error> {
-    // // ... this depends on `ddca_get_display_info_list`, which is not present in the library :/ (it has version2 instead)
-    // // see `ldconfig -p` to find dynamic library path, then `nm -D` to find the symbols in the library
-    // // https://github.com/arcnmx/ddcutil-rs/issues/2
-    // let displays = ddcutil::DisplayInfo::enumerate();
-    // for d in &displays? {
-    //     println!("{d:#?}")
-    // }
+#[derive(Debug, Parser, PartialEq)]
+#[command(
+    about = "A tool for adaptive brightness on devices that wouldn't otherwise have it built in",
+    author = "Theo Vanderkooy",
+    version
+)]
+struct Args {
+    #[arg(
+        global = true,
+        short,
+        long = "config",
+        help = format!("Path to configuration file. Defaults to `{CONFIG_PATH}` under the user's config directory."),
+    )]
+    config_path: Option<PathBuf>,
 
-    // return Ok(());
-    // #[allow(unreachable_code)]
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand, PartialEq)]
+enum Command {
+    #[command(
+        about = "(default) Poll brightness sensor value and periodically update monitor brightness based on the config file."
+    )]
+    Run,
+
+    #[command(about = "Verify the config file")]
+    TestConfig,
+    // TODO:
+    //  - detecting monitors (... or at least tell them (how to) to use ddcutil)
+    //  - directly set brightness?
+    //  - generate default config file based on connected monitors
+}
+
+fn main() -> Result<(), anyhow::Error> {
+    let args = Args::parse();
+
+    println!("args = {args:?}");
+
+    // Decide on config file path: from CLI args if set, else default config file location
+    let config_file_path = match args.config_path {
+        Some(path) => {
+            let path = path
+                .canonicalize()
+                .with_context(|| format!("Could not open config file `{0}`", path.display()));
+
+            path
+        }
+        None => xdg_location_of(&dirs::CONFIG, CONFIG_PATH)
+            .with_context(|| "Could not open config file"),
+    };
+
+    // process commands
+    match args.command {
+        // Primary behaviour, fall-through to the rest of the function
+        None | Some(Command::Run) => {}
+
+        // Test config file: make sure it exists, can be read, and can be parsed
+        Some(Command::TestConfig) => {
+            let path = config_file_path.with_context(|| "Failed to find config file")?;
+            println!("Attempting to load config from `{0}`", path.display());
+            let conf =
+                Config::read_from_file(path).with_context(|| "Failed to parse configuration")?;
+            println!("Successfully read config: {conf:#?}");
+
+            return Ok(());
+        }
+    };
 
     // Read in configuration, or load default configuration
-    let config_location = xdg_location_of(&dirs::CONFIG, "adaptive-brightness/config.ron");
-    let config = match config_location {
+    let config = match config_file_path {
         Ok(path) => {
             println!("Reading config from {path}", path = path.display());
             Config::read_from_file(path)?
         }
         Err(err) => {
-            println!(
+            eprintln!(
                 "Config file not found in any standard locations, using default configuration."
             );
-            println!("  Config search error: {err}");
+            eprintln!("  Config search error: {err}");
             Config::from_str(DEFAULT_CONFIG)?
         }
     };
@@ -102,6 +163,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Main loop: periodically wake up to update all monitors
     loop {
         let mut updated = false;
+        let lux = sensor.read_lux()? as u32;
 
         for m in &mut monitors {
             updated = updated || m.update_brightness(lux)?;
@@ -116,9 +178,42 @@ fn main() -> Result<(), anyhow::Error> {
     }
 }
 
-// TODO remove test code
-#[ignore]
-#[test]
-fn test_testing() {
-    panic!()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_arg_parsing() {
+        assert_eq!(
+            Args {
+                config_path: None,
+                command: None,
+            },
+            Args::try_parse_from(&["executable"]).unwrap()
+        );
+
+        assert_eq!(
+            Args {
+                config_path: Some(PathBuf::from("/some/file")),
+                command: None,
+            },
+            Args::try_parse_from(&["executable", "--config", "/some/file"]).unwrap()
+        );
+
+        assert_eq!(
+            Args {
+                config_path: Some(PathBuf::from("/some/file")),
+                command: Some(Command::TestConfig),
+            },
+            Args::try_parse_from(&["executable", "test-config", "--config", "/some/file"]).unwrap()
+        );
+
+        assert_eq!(
+            Args {
+                config_path: Some(PathBuf::from("/some/file")),
+                command: Some(Command::Run),
+            },
+            Args::try_parse_from(&["executable", "--config", "/some/file", "run"]).unwrap()
+        );
+    }
 }

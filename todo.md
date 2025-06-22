@@ -28,3 +28,8 @@
 
 
 - "error=Io(Custom { kind: Other, error: "libusb error code -1" })" error = restartable
+
+
+libddcutil:
+ - see `ldconfig -p` to find dynamic library path, then `nm -D` to find the symbols in the library
+ - https://github.com/arcnmx/ddcutil-rs/issues/2
