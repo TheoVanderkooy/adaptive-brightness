@@ -5,12 +5,12 @@ use std::path::Path;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub enum MonitorId {
+    // TODO USB device, hiddev
     Default,
     I2cBus(u32),
     Model(String, String), // manufacturer, model
     Serial(String),
     ModelSerial(String, String, String), // manufacturer, model, serial#
-    // TODO USB device, hiddev
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -25,10 +25,8 @@ pub struct Config {
     // TODO: could configure brightness sensor (different intermediate chips (vid,pid), maybe implement different sensors)
 }
 
-
 impl Config {
     fn validate_and_normalize(mut self) -> Result<Self, anyhow::Error> {
-
         // Sort by priority. Sorting is stable, so position is the tie-breaker if multiple categories apply
         self.monitors.sort_by_key(|m| match m.identifier {
             MonitorId::I2cBus(_) => 0,
@@ -39,27 +37,27 @@ impl Config {
         });
 
         // TODO validation?
+        // - only one default
+        // - in general no duplicates
+        // - validate curves?
 
         Ok(self)
     }
 
     pub fn from_str(conf: &str) -> Result<Self, anyhow::Error> {
-        let opts = ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
-        let parsed = opts.from_str::<Config>(conf)?;
-        parsed.validate_and_normalize()
+        ron::Options::default()
+            .with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME)
+            .from_str::<Config>(conf)?
+            .validate_and_normalize()
     }
 
     pub fn read_from_file<P: AsRef<Path>>(file: P) -> Result<Self, anyhow::Error> {
-        let opts = ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
-        let parsed = opts.from_reader::<_, Config>(BufReader::new(File::open(file)?))?;
-        parsed.validate_and_normalize()
+        ron::Options::default()
+            .with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME)
+            .from_reader::<_, Config>(BufReader::new(File::open(file)?))?
+            .validate_and_normalize()
     }
 }
-
-/*
-TODO:
- - reading from config file
-*/
 
 #[cfg(test)]
 mod test {
