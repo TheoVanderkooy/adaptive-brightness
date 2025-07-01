@@ -1,6 +1,6 @@
 [package]
 name = "adaptive-brightness"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 
 [dependencies]
@@ -9,6 +9,9 @@ clap = { version = "4.5.40", features = ["derive"] }
 embedded-hal = "1.0.0"
 ftdi = "0.1.3"
 ftdi-embedded-hal = { version = "0.23.2", features = ["ftdi"] }
+# TODO switch this back to using git once lib usage is stable enough
+# libddcutil2 = { version = "0.1.0", git = "https://github.com/TheoVanderkooy/ddcutil-rs" }
+libddcutil2 = { version = "0.1.0", path = "../../ddcutil-rs" }
 ron = "0.10.1"
 serde = { version = "1.0.219", features = ["derive"] }
 xdg-dirs = { git = "https://github.com/TheoVanderkooy/xdg-dirs-rs.git", version = "0.1.3" }

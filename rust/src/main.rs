@@ -12,10 +12,11 @@ use tsl2591::TSL2591;
 
 // my libraries
 use xdg_dirs::{dirs, xdg_location_of, xdg_user_dir};
+use libddcutil2 as ddc;
 
+// STD
 use std::fs::File;
 use std::io::Write;
-// STD
 use std::path::PathBuf;
 use std::{fs, thread, time};
 
@@ -30,7 +31,7 @@ const DEFAULT_CONFIG: &str = r#"
 (
 monitors: [
     (
-        identifier: Bus(6),
+        identifier: I2cBus(6),
         curve: [
             (0, 10),
             (250, 100),
@@ -55,6 +56,10 @@ enum Command {
     // TODO:
     //  - detecting monitors (... or at least tell them (how to) to use ddcutil)
     //  - directly set brightness?
+
+
+    #[command(about = "for testing")]
+    Test,
 }
 
 #[derive(Debug, Parser, PartialEq)]
@@ -80,7 +85,7 @@ impl Args {
     /// Get the config path, and verify the file exists. This is the either the path passed as an arg, or from the XDG directory if not specified.
     ///
     /// This returns error if the path does not exist.
-    fn get_config_path(&self) -> Result<PathBuf, anyhow::Error> {
+    fn get_config_path(&self) -> anyhow::Result<PathBuf> {
         match &self.config_path {
             Some(path) => {
                 let path = path
@@ -95,7 +100,25 @@ impl Args {
     }
 }
 
-fn main() -> Result<(), anyhow::Error> {
+/// Load the configuration based on arguments.
+/// Uses the file supplied to the CLI, or in the default location if not specified, or the default config if there is no file.
+fn get_config(args: &Args) -> anyhow::Result<Config> {
+   match args.get_config_path() {
+        Ok(path) => {
+            println!("Reading config from {path}", path = path.display());
+            Config::read_from_file(path)
+        }
+        Err(err) => {
+            eprintln!(
+                "Config file not found in any standard locations, using default configuration."
+            );
+            eprintln!("  Config search error: {err}");
+            Config::from_str(DEFAULT_CONFIG)
+        }
+    }
+}
+
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     println!("args = {args:?}");
@@ -109,12 +132,14 @@ fn main() -> Result<(), anyhow::Error> {
         Some(Command::TestConfig) => check_config(&args),
 
         // Generate config file: if the file does not already exist, write
-        Some(Command::GenConfig) => return gen_config_file(&args),
+        Some(Command::GenConfig) => gen_config_file(&args),
+
+        Some(Command::Test) => test(&args),
     }
 }
 
 /// Verify the config file: Make sure it can be found at the expected location (passed through CLI or using XDG config location), and parses properly.
-fn check_config(args: &Args) -> Result<(), anyhow::Error> {
+fn check_config(args: &Args) -> anyhow::Result<()> {
     // Try to _find_ the config file
     let path = args
         .get_config_path()
@@ -125,11 +150,14 @@ fn check_config(args: &Args) -> Result<(), anyhow::Error> {
     let conf = Config::read_from_file(path).with_context(|| "Failed to parse configuration")?;
 
     println!("Successfully read config: {conf:#?}");
+
+    // TODO: compare configuration against list of displays, list brightness curve for each detected display
+
     Ok(())
 }
 
 /// Generate a default configuration file, at the expected location based on args or environment variables.
-fn gen_config_file(args: &Args) -> Result<(), anyhow::Error> {
+fn gen_config_file(args: &Args) -> anyhow::Result<()> {
     // CLI arg path, or default from environment
     let path = args
         .config_path
@@ -160,21 +188,9 @@ fn gen_config_file(args: &Args) -> Result<(), anyhow::Error> {
 }
 
 /// Default daemon behaviour: Read config file, then read brightness and update each monitor forever.
-fn main_loop(args: &Args) -> Result<(), anyhow::Error> {
+fn main_loop(args: &Args) -> anyhow::Result<()> {
     // Read in configuration, or load default configuration
-    let config = match args.get_config_path() {
-        Ok(path) => {
-            println!("Reading config from {path}", path = path.display());
-            Config::read_from_file(path)?
-        }
-        Err(err) => {
-            eprintln!(
-                "Config file not found in any standard locations, using default configuration."
-            );
-            eprintln!("  Config search error: {err}");
-            Config::from_str(DEFAULT_CONFIG)?
-        }
-    };
+    let config = get_config(args)?;
     println!("Loaded configuration: {config:?}");
 
     // Construct monitor states based on the configuration
@@ -185,13 +201,14 @@ fn main_loop(args: &Args) -> Result<(), anyhow::Error> {
             let curve = PiecewiseLinear::from_steps(mc.curve).ok_or_else(|| {
                 anyhow::anyhow!("Invalid brightness curve for monitor {0:?}", mc.identifier)
             })?;
-
+// TODO need to match by most-specific setting: i2c bus > serial > model > default
             Ok(match mc.identifier {
-                MonitorId::Bus(bus_id) => MonitorState::for_bus(bus_id, curve),
+                MonitorId::I2cBus(bus_id) => MonitorState::for_bus(bus_id, curve),
                 // TODO: match monitors by other properties
                 MonitorId::Default => todo!(),
-                MonitorId::Model(_) => todo!(),
+                MonitorId::Model(_, _) => todo!(),
                 MonitorId::Serial(_) => todo!(),
+                MonitorId::ModelSerial(_, _, _) => todo!(),
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -231,6 +248,60 @@ fn main_loop(args: &Args) -> Result<(), anyhow::Error> {
         }));
     }
 }
+
+
+// TODO remove this once no longer needed
+fn test(args: &Args) -> anyhow::Result<()> {
+    // testing: get monitors
+
+    let displays =
+        ddc::get_display_info_list(false)
+            .map_err(|e| anyhow::anyhow!("{}", e.to_string()))
+            ?;
+
+    let config = get_config(args)?;
+
+
+    for d in &displays {
+        println!("Display {0}: {1} {2} {3}", d.display_no(), d.manufacturer(), d.model(), d.serial_number());
+
+        // TODO find configuration that applies for this display
+
+        let matching = config.monitors.iter().find(|&m| match &m.identifier {
+            // default always applies
+            MonitorId::Default => true,
+
+            // compare physical path
+            MonitorId::I2cBus(busno) => {
+                d.path() == ddc::DisplayPath::I2C { bus: *busno as i32 }
+            }
+
+            // compare manufacturer/model/serial number
+            MonitorId::Model(manufacturer  , model) => {
+                d.manufacturer() == manufacturer && d.model() == model
+            }
+            MonitorId::ModelSerial(manufacturer, model, serial) => {
+                d.manufacturer() == manufacturer && d.model() == model && d.serial_number() == serial
+            }
+            MonitorId::Serial(serial) => {
+                d.serial_number() == serial
+            }
+        });
+
+        match matching {
+            None => println!("  No matching configuration!"),
+            Some(conf) => println!("  Matched: {0:?}", conf),
+        }
+
+    }
+
+
+
+    Ok(())
+}
+
+
+
 
 #[cfg(test)]
 mod tests {

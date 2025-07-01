@@ -6,9 +6,11 @@ use std::path::Path;
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub enum MonitorId {
     Default,
-    Bus(u32),
-    Model(String),
+    I2cBus(u32),
+    Model(String, String), // manufacturer, model
     Serial(String),
+    ModelSerial(String, String, String), // manufacturer, model, serial#
+    // TODO USB device, hiddev
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -23,13 +25,34 @@ pub struct Config {
     // TODO: could configure brightness sensor (different intermediate chips (vid,pid), maybe implement different sensors)
 }
 
+
 impl Config {
+    fn validate_and_normalize(mut self) -> Result<Self, anyhow::Error> {
+
+        // Sort by priority. Sorting is stable, so position is the tie-breaker if multiple categories apply
+        self.monitors.sort_by_key(|m| match m.identifier {
+            MonitorId::I2cBus(_) => 0,
+            MonitorId::ModelSerial(_, _, _) => 10,
+            MonitorId::Serial(_) => 11,
+            MonitorId::Model(_, _) => 20,
+            MonitorId::Default => 100,
+        });
+
+        // TODO validation?
+
+        Ok(self)
+    }
+
     pub fn from_str(conf: &str) -> Result<Self, anyhow::Error> {
-        Ok(ron::from_str::<Config>(conf)?)
+        let opts = ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
+        let parsed = opts.from_str::<Config>(conf)?;
+        parsed.validate_and_normalize()
     }
 
     pub fn read_from_file<P: AsRef<Path>>(file: P) -> Result<Self, anyhow::Error> {
-        Ok(ron::de::from_reader(BufReader::new(File::open(file)?))?)
+        let opts = ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
+        let parsed = opts.from_reader::<_, Config>(BufReader::new(File::open(file)?))?;
+        parsed.validate_and_normalize()
     }
 }
 
@@ -45,14 +68,14 @@ mod test {
         (
         monitors: [
             (
-                identifier: Model("xyz"),
+                identifier: Model("abc", "xyz"),
                 curve: [
                     (0, 10),
                     (250, 100),
                 ],
             ),
             (
-                identifier: Bus(6),
+                identifier: I2cBus(6),
                 curve: [
                     (0, 50),
                 ],
@@ -70,11 +93,11 @@ mod test {
             Config {
                 monitors: vec![
                     MonitorConfig {
-                        identifier: MonitorId::Model("xyz".to_string()),
+                        identifier: MonitorId::Model("abc".to_string(), "xyz".to_string()),
                         curve: vec![(0, 10), (250, 100)],
                     },
                     MonitorConfig {
-                        identifier: MonitorId::Bus(6),
+                        identifier: MonitorId::I2cBus(6),
                         curve: vec![(0, 50)],
                     },
                 ]
