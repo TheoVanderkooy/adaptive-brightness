@@ -256,12 +256,11 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     let config = get_config(args)?;
     println!("Loaded configuration: {config:?}");
 
-    // TODO: this should use detected displays, construct display handles,
-    // and use ddcutil lib to set the values instead of
-
+    // Detect displays and match them up with configuration settings
     let displays = get_displays()?;
     let config_mapping = match_displays_to_config(&displays, &config)?;
 
+    // Construct internal state for each device
     let mut monitors: Vec<MonitorState> = config_mapping
         .iter()
         .filter_map(|&(ref d, mc)| {

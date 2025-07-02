@@ -24,8 +24,12 @@ The general configuration structure is:
     ]
 )
 ```
-where there could be multiple monitors in the list, one or more (lux, brightness) pairs for each curve, and `<identifier>` is an enum representing how to identify the monitor(s) that should follow that particular curve. For now, only `Bus(bus_id: int)` works, to specify the exact I2C bus the monitor is connected to.
-
+where there could be multiple monitors in the list, one or more (lux, brightness) pairs for each curve, and `<identifier>` is an enum representing how to identify the monitor(s) that should follow that particular curve. The allowed values are:
+- `I2cBus(<busno>)`: the bus number of the corresponding `/dev/i2c-<busno>` device.
+- `ModelSerial(<manufacturer>, <model>, <serial code>)`: the strings representing manufacturer, model, and serial code. The easiest way to find these strings is `adaptive-brightness check`, or `ddcutil detect`.
+- `Model(<manufacturer>, <model>)`: the same as `ModelSerial`, but without the serial number. This can be useful to configure multiple of the same monitor with the same curve. `ModelSerial` will take precedence if multiple rules apply to the same display.
+- `Serial(<serial code>)`: the same as `ModelSerial` but omitting the manufacturer & model.
+- `Default`: will apply to any display that doesn't match a more specific rule. If there is no default, displays that don't match any rule will be ignored.
 
 Hardware
 --------
