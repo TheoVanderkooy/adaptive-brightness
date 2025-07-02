@@ -11,7 +11,7 @@ use piecewise_linear::*;
 use tsl2591::TSL2591;
 
 // my libraries
-use libddcutil2 as ddc;
+use ddc;
 use xdg_dirs::{dirs, xdg_location_of, xdg_user_dir};
 
 // STD
@@ -256,28 +256,31 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     let config = get_config(args)?;
     println!("Loaded configuration: {config:?}");
 
-// TODO: this should use detected displays, construct display handles,
-// and use ddcutil lib to set the values instead of
+    // TODO: this should use detected displays, construct display handles,
+    // and use ddcutil lib to set the values instead of
 
-    // Construct monitor states based on the configuration
-    let mut monitors: Vec<MonitorState> = config
-        .monitors
-        .into_iter()
-        .map(|mc| -> Result<MonitorState, anyhow::Error> {
-            let curve = PiecewiseLinear::from_steps(mc.curve).ok_or_else(|| {
+    let displays = get_displays()?;
+    let config_mapping = match_displays_to_config(&displays, &config)?;
+
+    let mut monitors: Vec<MonitorState> = config_mapping
+        .iter()
+        .filter_map(|&(ref d, mc)| {
+            // filter out monitors that don't match any config
+            if let Some(mc) = mc {
+                Some((*d, mc))
+            } else {
+                None
+            }
+        })
+        .map(|(d, mc)| -> anyhow::Result<MonitorState> {
+            // Open each display and build a monitor config for them
+            let curve = PiecewiseLinear::from_steps(mc.curve.clone()).ok_or_else(|| {
                 anyhow::anyhow!("Invalid brightness curve for monitor {0:?}", mc.identifier)
             })?;
-            // TODO need to match by most-specific setting: i2c bus > serial > model > default
-            Ok(match mc.identifier {
-                MonitorId::I2cBus(bus_id) => MonitorState::for_bus(bus_id, curve),
-                // TODO: match monitors by other properties
-                MonitorId::Default => todo!(),
-                MonitorId::Model(_, _) => todo!(),
-                MonitorId::Serial(_) => todo!(),
-                MonitorId::ModelSerial(_, _, _) => todo!(),
-            })
+
+            Ok(MonitorState::for_display(&d, curve)?)
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<anyhow::Result<Vec<_>>>()?;
 
     // Connect to the brightness sensor
     let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
