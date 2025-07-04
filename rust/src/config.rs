@@ -1,9 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum MonitorId {
     // TODO USB device, hiddev
     Default,
@@ -13,13 +13,13 @@ pub enum MonitorId {
     ModelSerial(String, String, String), // manufacturer, model, serial#
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct MonitorConfig {
     pub identifier: MonitorId,
     pub curve: Vec<(u32, u32)>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Config {
     pub monitors: Vec<MonitorConfig>,
     // TODO: could configure brightness sensor (different intermediate chips (vid,pid), maybe implement different sensors)

@@ -16,7 +16,6 @@ use xdg_dirs::{dirs, xdg_location_of, xdg_user_dir};
 
 // STD
 use std::fs::File;
-use std::io::Write;
 use std::path::PathBuf;
 use std::{fs, thread, time};
 
@@ -31,7 +30,7 @@ const DEFAULT_CONFIG: &str = r#"
 (
 monitors: [
     (
-        identifier: I2cBus(6),
+        identifier: Default,
         curve: [
             (0, 10),
             (250, 100),
@@ -167,6 +166,8 @@ fn main() -> anyhow::Result<()> {
 
     println!("args = {args:?}");
 
+    // TODO initialize libddcutil
+
     // process commands
     match args.command {
         // Primary behaviour: releatedly read brightness and update monitors
@@ -239,13 +240,28 @@ fn gen_config_file(args: &Args) -> anyhow::Result<()> {
         _ => { /* do nothing if no parent */ }
     };
 
-    // Create the new file and write the default contents
-    let mut file = File::create_new(&path)
-        .with_context(|| format!("Failed to create new config file {0}", path.display()))?;
+    // Detect displays to write default config
+    let displays = get_displays()?;
+
+    let monitors = displays
+        .into_iter()
+        .map(|d| MonitorConfig {
+            identifier: MonitorId::ModelSerial(
+                d.manufacturer().to_string(),
+                d.model().to_string(),
+                d.serial_number().to_string(),
+            ),
+            curve: vec![(0, 10), (250, 100)],
+        })
+        .collect::<Vec<_>>();
+    let conf = Config { monitors: monitors };
 
     // Create the new file and write the default contents
-    write!(file, "{}", DEFAULT_CONFIG)
-        .with_context(|| format!("Failed to write the new config file {0}", path.display()))?;
+    let file = File::create_new(&path)
+        .with_context(|| format!("Failed to create new config file {0}", path.display()))?;
+
+    let format_opts = ron::ser::PrettyConfig::new().indentor("  ");
+    ron::Options::default().to_io_writer_pretty(file, &conf, format_opts)?;
 
     Ok(())
 }
