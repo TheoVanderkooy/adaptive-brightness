@@ -77,10 +77,10 @@ impl MonitorState {
         let change = target as i32 - cur as i32;
 
         let new_b;
-        if i32::abs(change) <= 1 {
+        if i32::abs(change) <= 3 {
             new_b = target;
         } else {
-            new_b = if target > cur { cur + 1 } else { cur - 1 };
+            new_b = if target > cur { cur + 2 } else { cur - 2 };
         }
 
         if new_b != cur {
