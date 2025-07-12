@@ -19,16 +19,13 @@ impl MonitorState {
     const ROUND_TO_NEAREST: u16 = 5;
 
     /// Construct a `MonitorState` with the given brightness curve from a `DisplayInfo`.
-    pub fn for_display(display: &ddc::DisplayInfo, curve: PiecewiseLinear) -> anyhow::Result<Self> {
-        let display = ddc::Display::from_display_info(display)
-            .map_err(|e| anyhow::anyhow!("{}", e.to_string()))?;
-
-        Ok(MonitorState {
+    pub fn for_display(display: ddc::Display, curve: PiecewiseLinear) -> Self {
+        MonitorState {
             display,
             curve,
             target: 0,
             brightness: 0,
-        })
+        }
     }
 
     /// Set monitor brightness to the given percentage unconditionally.

@@ -296,13 +296,15 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
                 None
             }
         })
-        .map(|(d, mc)| -> anyhow::Result<MonitorState> {
-            // Open each display and build a monitor config for them
+        .map(|(d, mc)| {
+            // Open each display and build their state
             let curve = PiecewiseLinear::from_steps(mc.curve.clone()).ok_or_else(|| {
                 anyhow::anyhow!("Invalid brightness curve for monitor {0:?}", mc.identifier)
             })?;
 
-            Ok(MonitorState::for_display(&d, curve)?)
+            let d = ddc::Display::from_display_info(d).map_err(|e| anyhow::anyhow!("{}", e.to_string()))?;
+
+            Ok(MonitorState::for_display(d, curve))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
@@ -357,6 +359,28 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
 // TODO remove this once no longer needed
 fn test(_args: &Args) -> anyhow::Result<()> {
     // ...
+
+    let infos = ddc::get_display_info_list(false).unwrap();
+    let info = infos
+        .as_slice().iter().find(|d| d.model() == "G27Q").unwrap();
+    let displ = ddc::Display::from_display_info(info).unwrap();
+
+    // let displ = ddc::Display::from_identifier(ddc::DisplayIdentifier::I2cBus(6)).unwrap();
+    // let displ = ddc::Display::from_identifier(
+    //     ddc::DisplayIdentifier::SerialNumber{manufacturer: Some(c"GBT"), model: Some(c"G27Q"), serial: None}
+    //     // ddc::DisplayIdentifier::SerialNumber{manufacturer: Some(c"GBT"), model: Some(c"G27Q"), serial: Some(c"23232B002075")}
+    // ).unwrap();
+    println!("displ={displ:?}");
+    let caps = displ.get_capabilities().unwrap();
+
+    println!("version={0}", caps.version());
+    println!("cmd_codes={0:?}", caps.cmd_codes());
+    println!("features_bits={0:?}", caps.get_feature_bitfield().as_slice());
+    println!("messages={0:?}", caps.get_messages());
+    println!("vcp_codes=");
+    for c in caps.vcp_codes() {
+        println!("    0x{0:x}: {1:?}", c.feature_code(), c.values());
+    }
 
     Ok(())
 }
