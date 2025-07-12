@@ -46,6 +46,7 @@ impl MonitorState {
     /// Set monitor brightness based on the given lux value unconditionally. Used for initialization.
     pub fn set_brightness_for_lux(&mut self, lux: u32) -> Result<(), anyhow::Error> {
         let target = self.curve.eval(lux) as u16;
+        println!("setting initial brightness: lux={lux}, setting={target}");
         self.set_brightness(target)
     }
 

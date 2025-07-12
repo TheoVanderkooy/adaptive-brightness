@@ -55,10 +55,6 @@ enum Command {
     #[command(about = "Generate a default config file")]
     GenConfig,
 
-    // TODO:
-    //  - detecting monitors (... or at least tell them (how to) to use ddcutil)
-    //  - directly set brightness?
-
     // TODO remove
     #[command(about = "for testing")]
     Test,
@@ -166,7 +162,11 @@ fn main() -> anyhow::Result<()> {
 
     println!("args = {args:?}");
 
-    // TODO initialize libddcutil
+    ddc::sys::DDCA_Init_Options(0);
+
+    ddc::lib_init(None, ddc::SysLogLevel::DDCA_SYSLOG_WARNING, 0.into())
+        .map_err(|e| anyhow::anyhow!("{0}", e.to_string()))?;
+    ddc::lib_set_dynamic_sleep(false);
 
     // process commands
     match args.command {
@@ -276,6 +276,15 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     let displays = get_displays()?;
     let config_mapping = match_displays_to_config(&displays, &config)?;
 
+    println!("Detected displays:");
+    for (d, conf) in &config_mapping {
+        print!("    {0} {1} {2}: ", d.manufacturer(), d.model(), d.serial_number());
+        match conf {
+            None => println!("no matching config"),
+            Some(mc) => println!(" curve={0:?}", mc.curve),
+        }
+    }
+
     // Construct internal state for each device
     let mut monitors: Vec<MonitorState> = config_mapping
         .iter()
@@ -315,6 +324,8 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
         m.set_brightness_for_lux(lux)?;
     }
 
+    let mut iters_since_last_update = 0;
+
     // Main loop: periodically wake up to update all monitors
     loop {
         let mut updated = false;
@@ -322,6 +333,16 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
 
         for m in &mut monitors {
             updated = updated || m.update_brightness(lux)?;
+        }
+
+        if updated {
+            iters_since_last_update = 0;
+        } else {
+            iters_since_last_update += 1;
+            if iters_since_last_update >= 100 {
+                iters_since_last_update = 0;
+                println!("lux={lux}")
+            }
         }
 
         // Don't sleep as long if we may be off-target
