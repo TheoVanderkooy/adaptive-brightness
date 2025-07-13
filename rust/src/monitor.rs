@@ -65,7 +65,7 @@ impl MonitorState {
 
     /// Update monitor brightness for the given lux value.
     ///
-    /// Returns true if brightness was changed, false otherwise.
+    /// Returns true if new brightness value does not match the target, false otherwise.
     pub fn update_brightness(&mut self, lux: u32) -> Result<bool, anyhow::Error> {
         let cur = self.brightness;
 
@@ -85,7 +85,7 @@ impl MonitorState {
             println!("lux={lux}, target={target}, setting={new_b}");
             self.set_brightness(new_b)?;
 
-            Ok(true)
+            Ok(new_b != target)
         } else {
             Ok(false)
         }
