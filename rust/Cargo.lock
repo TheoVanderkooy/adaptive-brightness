@@ -297,8 +297,9 @@ checksum = "1171693293099992e19cddea4e8b849964e9846f4acee11b3948bcc337be8776"
 [[package]]
 name = "libddcutil2"
 version = "0.1.1"
-source = "git+https://github.com/TheoVanderkooy/ddcutil-rs#d57144c0426a22e9ede2ea191826ee4eaf89a9d3"
+source = "git+https://github.com/TheoVanderkooy/ddcutil-rs#2d638c9455e90dad157350bef4e628c365a81650"
 dependencies = [
+ "anyhow",
  "bindgen",
  "pkg-config",
 ]

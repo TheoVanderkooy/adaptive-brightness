@@ -1,7 +1,7 @@
 /// Wrapper for a single monitor that handles updating its brightness and remembers its state.
 use crate::piecewise_linear::PiecewiseLinear;
 
-use ddc;
+use ddc::{self, ConvertToAnyhow};
 
 #[derive(Debug)]
 pub struct MonitorState {
@@ -32,9 +32,7 @@ impl MonitorState {
     fn set_brightness(&mut self, pct: u16) -> Result<(), anyhow::Error> {
         let pct = pct.clamp(0, 100);
 
-        self.display
-            .set_vcp_value(0x10, pct)
-            .map_err(|e| anyhow::anyhow!("{}", e.to_string()))?;
+        self.display.set_vcp_value(0x10, pct).anyhow()?;
 
         self.brightness = pct;
         Ok(())

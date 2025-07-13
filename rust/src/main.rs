@@ -11,7 +11,7 @@ use piecewise_linear::*;
 use tsl2591::TSL2591;
 
 // my libraries
-use ddc;
+use ddc::{self, ConvertToAnyhow};
 use xdg_dirs::{dirs, xdg_location_of, xdg_user_dir};
 
 // STD
@@ -118,7 +118,7 @@ fn get_config(args: &Args) -> anyhow::Result<Config> {
 
 /// Get list of displays from the DDC library, and wrapp the error because they aren't sync so anyhow doesn't like them.
 fn get_displays() -> anyhow::Result<ddc::DisplayInfoList> {
-    ddc::get_display_info_list(false).map_err(|e| anyhow::anyhow!("{}", e.to_string()))
+    ddc::get_display_info_list(false).anyhow()
 }
 
 /// Match up display configuration to the detected displays.
@@ -164,8 +164,7 @@ fn main() -> anyhow::Result<()> {
 
     ddc::sys::DDCA_Init_Options(0);
 
-    ddc::lib_init(None, ddc::SysLogLevel::DDCA_SYSLOG_WARNING, 0.into())
-        .map_err(|e| anyhow::anyhow!("{0}", e.to_string()))?;
+    ddc::lib_init(None, ddc::SysLogLevel::DDCA_SYSLOG_WARNING, 0.into()).anyhow()?;
     ddc::lib_set_dynamic_sleep(false);
 
     // process commands
@@ -278,7 +277,12 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
 
     println!("Detected displays:");
     for (d, conf) in &config_mapping {
-        print!("    {0} {1} {2}: ", d.manufacturer(), d.model(), d.serial_number());
+        print!(
+            "    {0} {1} {2}: ",
+            d.manufacturer(),
+            d.model(),
+            d.serial_number()
+        );
         match conf {
             None => println!("no matching config"),
             Some(mc) => println!(" curve={0:?}", mc.curve),
@@ -302,7 +306,7 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
                 anyhow::anyhow!("Invalid brightness curve for monitor {0:?}", mc.identifier)
             })?;
 
-            let d = ddc::Display::from_display_info(d).map_err(|e| anyhow::anyhow!("{}", e.to_string()))?;
+            let d = ddc::Display::from_display_info(d).anyhow()?;
 
             Ok(MonitorState::for_display(d, curve))
         })
@@ -362,7 +366,10 @@ fn test(_args: &Args) -> anyhow::Result<()> {
 
     let infos = ddc::get_display_info_list(false).unwrap();
     let info = infos
-        .as_slice().iter().find(|d| d.model() == "G27Q").unwrap();
+        .as_slice()
+        .iter()
+        .find(|d| d.model() == "G27Q")
+        .unwrap();
     let displ = ddc::Display::from_display_info(info).unwrap();
 
     // let displ = ddc::Display::from_identifier(ddc::DisplayIdentifier::I2cBus(6)).unwrap();
@@ -375,7 +382,10 @@ fn test(_args: &Args) -> anyhow::Result<()> {
 
     println!("version={0}", caps.version());
     println!("cmd_codes={0:?}", caps.cmd_codes());
-    println!("features_bits={0:?}", caps.get_feature_bitfield().as_slice());
+    println!(
+        "features_bits={0:?}",
+        caps.get_feature_bitfield().as_slice()
+    );
     println!("messages={0:?}", caps.get_messages());
     println!("vcp_codes=");
     for c in caps.vcp_codes() {
