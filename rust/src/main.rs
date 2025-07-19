@@ -278,14 +278,14 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     println!("Detected displays:");
     for (d, conf) in &config_mapping {
         print!(
-            "    {0} {1} {2}: ",
+            "    {0:<3}  {1:<13}  {2:<13}: ",
             d.manufacturer(),
             d.model(),
             d.serial_number()
         );
         match conf {
             None => println!("no matching config"),
-            Some(mc) => println!(" curve={0:?}", mc.curve),
+            Some(mc) => println!("curve={0:?}", mc.curve),
         }
     }
 
@@ -311,6 +311,12 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
             Ok(MonitorState::for_display(d, curve))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
+
+    // Sanity check: if no monitors, there's nothing to do
+    if monitors.len() < 1 {
+        anyhow::bail!("no monitors detected matching any configuration values, exiting ...");
+    }
+// TODO should make monitors "required" so we can fail early if _some_ monitors aren't present but some are
 
     // Connect to the brightness sensor
     let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
@@ -347,7 +353,7 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
             iters_since_last_update += 1;
             if iters_since_last_update >= 100 {
                 iters_since_last_update = 0;
-                println!("lux={lux}")
+                println!("lux={lux}");
             }
         }
 

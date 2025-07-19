@@ -52,12 +52,14 @@ impl MonitorState {
     /// This prevents the target from moving too erratically, reducing how often we make updates
     /// oscillating over a small range
     fn new_target_brightness(cur: u16, new: u16) -> u16 {
+        let round_to = if new > 20 { Self::ROUND_TO_NEAREST } else { 2 };
+
         if new == cur {
             new
         } else if new < cur {
-            (new + Self::ROUND_TO_NEAREST - 1) / Self::ROUND_TO_NEAREST * Self::ROUND_TO_NEAREST
+            (new + round_to - 1) / round_to * round_to
         } else {
-            new / Self::ROUND_TO_NEAREST * Self::ROUND_TO_NEAREST
+            new / round_to * round_to
         }
     }
 
