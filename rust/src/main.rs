@@ -15,9 +15,9 @@ use ddc::{self, ConvertToAnyhow};
 use xdg_dirs::{dirs, xdg_location_of, xdg_user_dir};
 
 // STD
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
-use std::{fs, thread, time};
+use std::{fs, io, thread, time};
 
 // 3rd party libraries
 use anyhow::Context;
@@ -40,6 +40,25 @@ monitors: [
 )
 "#;
 
+#[derive(Debug, PartialEq, clap::Args)]
+#[command(flatten_help = true)]
+struct CollectBrightnessArgs {
+    #[arg(
+        short,
+        long = "out",
+        help = "Path to write brightness data to. Defaults to stdout. If a path is specified, the data will also be pretty-printed to stdout. Format is: date,time,lux"
+    )]
+    out_path: Option<PathBuf>,
+
+    #[arg(
+        short, long = "period",
+        help = "How frequently to poll brightness.",
+        value_parser = humantime::parse_duration,
+        default_value = "5m",
+    )]
+    period: time::Duration,
+}
+
 #[derive(Debug, Subcommand, PartialEq)]
 enum Command {
     #[command(
@@ -54,6 +73,8 @@ enum Command {
 
     #[command(about = "Generate a default config file")]
     GenConfig,
+
+    CollectBrightness(CollectBrightnessArgs),
 
     // TODO remove
     #[command(about = "for testing")]
@@ -157,28 +178,48 @@ fn match_displays_to_config<'d, 'c>(
     Ok(ret)
 }
 
-fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-
-    println!("args = {args:?}");
-
+fn init_ddcutil() -> anyhow::Result<()> {
     ddc::sys::DDCA_Init_Options(0);
-
     ddc::lib_init(None, ddc::SysLogLevel::DDCA_SYSLOG_WARNING, 0.into()).anyhow()?;
     ddc::lib_set_dynamic_sleep(false);
+
+    Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
 
     // process commands
     match args.command {
         // Primary behaviour: releatedly read brightness and update monitors
-        None | Some(Command::Run) => main_loop(&args),
+        None | Some(Command::Run) => {
+            println!("args = {args:?}");
+            init_ddcutil()?;
+            main_loop(&args)
+        }
 
         // Test config file: make sure it exists, can be read, and can be parsed
-        Some(Command::Check) => check_config(&args),
+        Some(Command::Check) => {
+            init_ddcutil()?;
+            check_config(&args)
+        }
 
         // Generate config file: if the file does not already exist, write
-        Some(Command::GenConfig) => gen_config_file(&args),
+        Some(Command::GenConfig) => {
+            init_ddcutil()?;
+            gen_config_file(&args)
+        }
 
-        Some(Command::Test) => test(&args),
+        // Periodically poll brightness and write it to a file
+        Some(Command::CollectBrightness(ref collect_args)) => {
+            collect_brightness(&args, &collect_args)
+        }
+
+        // testing
+        Some(Command::Test) => {
+            init_ddcutil()?;
+            test(&args)
+        }
     }
 }
 
@@ -265,6 +306,36 @@ fn gen_config_file(args: &Args) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Periodically measure the current brightness, and write the result to a file or stdout.
+fn collect_brightness(_args: &Args, collect_args: &CollectBrightnessArgs) -> anyhow::Result<()> {
+    let to_file = collect_args.out_path.is_some();
+
+    let mut sensor = open_brightness_sensor()?;
+
+    let mut writer: csv::Writer<Box<dyn io::Write>> = csv::WriterBuilder::new()
+        .has_headers(false)
+        .from_writer(match collect_args.out_path {
+            Some(ref p) => Box::new(OpenOptions::new().append(true).create(true).open(p)?),
+            None => Box::new(io::stdout()),
+        });
+
+    // Loop to collect data and output CSV to out_path.
+    loop {
+        let lux = sensor.read_lux()?;
+        let now = chrono::Local::now().naive_local();
+
+        writer.serialize((now.date().to_string(), now.time().to_string(), lux))?;
+        writer.flush()?;
+
+        // If writing to a file, pretty-print to stdout
+        if to_file {
+            println!("{0} {1} -- lux={lux}", now.date(), now.time());
+        }
+
+        thread::sleep(collect_args.period);
+    }
+}
+
 /// Default daemon behaviour: Read config file, then read brightness and update each monitor forever.
 fn main_loop(args: &Args) -> anyhow::Result<()> {
     // Read in configuration, or load default configuration
@@ -316,19 +387,10 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     if monitors.len() < 1 {
         anyhow::bail!("no monitors detected matching any configuration values, exiting ...");
     }
-// TODO should make monitors "required" so we can fail early if _some_ monitors aren't present but some are
+    // TODO should make monitors "required" so we can fail early if _some_ monitors aren't present but some are
 
     // Connect to the brightness sensor
-    let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
-        .interface(ftdi::Interface::A)
-        .open()?;
-    let i2c = hal::FtHal::init_default(device)?.i2c()?;
-    let mut sensor = TSL2591::from_i2c(i2c)?;
-
-    // VendorId = 0x0403
-    // ProductId = 0x6014
-    // Description = USB <-> Serial Converter
-    // SerialNumber = FTA3Q3CS
+    let mut sensor = open_brightness_sensor()?;
 
     // Set initial brightness based on current state
     let lux = sensor.read_lux()? as u32;
@@ -366,37 +428,19 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     }
 }
 
+fn open_brightness_sensor() -> anyhow::Result<TSL2591<ftdi_embedded_hal::I2c<ftdi::Device>>> {
+    let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
+        .interface(ftdi::Interface::A)
+        .open()?;
+    let i2c = hal::FtHal::init_default(device)?.i2c()?;
+    let sensor = TSL2591::from_i2c(i2c)?;
+
+    Ok(sensor)
+}
+
 // TODO remove this once no longer needed
 fn test(_args: &Args) -> anyhow::Result<()> {
     // ...
-
-    let infos = ddc::get_display_info_list(false).unwrap();
-    let info = infos
-        .as_slice()
-        .iter()
-        .find(|d| d.model() == "G27Q")
-        .unwrap();
-    let displ = ddc::Display::from_display_info(info).unwrap();
-
-    // let displ = ddc::Display::from_identifier(ddc::DisplayIdentifier::I2cBus(6)).unwrap();
-    // let displ = ddc::Display::from_identifier(
-    //     ddc::DisplayIdentifier::SerialNumber{manufacturer: Some(c"GBT"), model: Some(c"G27Q"), serial: None}
-    //     // ddc::DisplayIdentifier::SerialNumber{manufacturer: Some(c"GBT"), model: Some(c"G27Q"), serial: Some(c"23232B002075")}
-    // ).unwrap();
-    println!("displ={displ:?}");
-    let caps = displ.get_capabilities().unwrap();
-
-    println!("version={0}", caps.version());
-    println!("cmd_codes={0:?}", caps.cmd_codes());
-    println!(
-        "features_bits={0:?}",
-        caps.get_feature_bitfield().as_slice()
-    );
-    println!("messages={0:?}", caps.get_messages());
-    println!("vcp_codes=");
-    for c in caps.vcp_codes() {
-        println!("    0x{0:x}: {1:?}", c.feature_code(), c.values());
-    }
 
     Ok(())
 }
