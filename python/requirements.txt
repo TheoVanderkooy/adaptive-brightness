@@ -1,2 +1,0 @@
-Adafruit-Blinka==8.58.1
-adafruit-circuitpython-tsl2591==1.4.3

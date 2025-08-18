@@ -1,6 +1,6 @@
 Adaptive Brightness
 ===================
-This uses an external brightness sensor to implement adaptive brightness for desktop external monitors. It simply polls the current brightness every 5s, and adjusts the monitor brightness accordingly. This is intended to be run as a systemd (or similar) service, and relies on the to restart it in case of failures. (for example on resume from sleep, it will get a USB IO error and needs to reconnect to the sensor. Restarting the whole process is an easy way to do this) Stuff under `python/` is a prototype & test scripts. The actual project is under `rust/`.
+This uses an external brightness sensor to implement adaptive brightness for desktop external monitors. It simply polls the current brightness every 5s, and adjusts the monitor brightness accordingly. This is intended to be run as a systemd (or similar) service, and relies on the to restart it in case of failures. (for example on resume from sleep, it will get a USB IO error and needs to reconnect to the sensor. Restarting the whole process is an easy way to do this)
 
 Configuration
 -------------
