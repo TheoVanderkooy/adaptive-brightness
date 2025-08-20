@@ -1,3 +1,6 @@
 data/
 .direnv/
 .vscode/
+
+/target
+/result

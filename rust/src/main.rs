@@ -2,7 +2,6 @@
 mod config;
 mod monitor;
 mod piecewise_linear;
-mod tsl2591;
 
 // in-crate imports
 use config::*;

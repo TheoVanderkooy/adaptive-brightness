@@ -26,9 +26,13 @@
 - [ ] proper logging library?
 - [ ] home-manager module?
 - [ ] configure sensor details: specify serial number of the ftdi device?
+- [ ] separate brightness server:
+  - [x] split out a binary just for reading & exposing brightness over a socket (to multiple consumers)
+  - [ ] move the main functionality to read from the socket
+  - [ ] separate CLI to read the current brightness?
 
-
-- "error=Io(Custom { kind: Other, error: "libusb error code -1" })" error = restartable
+systemd socket unit: https://ilmanzo.github.io/post/systemd-socket-activated-services/
+ - seems no direct way to do this with async-std...
 
 
 libddcutil:
