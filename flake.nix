@@ -86,61 +86,58 @@
         }
       );
 
+      packages = forEachSupportedSystem (
+        { pkgs }:
+        {
+          default =
+            let
+              # note: this builds the package based on the main binary, even though there are multiple projects in the workspace
+              manifest = (pkgs.lib.importTOML ./adaptive-brightness/Cargo.toml).package;
+            in
+            pkgs.rustPlatform.buildRustPackage {
+              pname = manifest.name;
+              version = manifest.version;
+              cargoLock = {
+                lockFile = ./Cargo.lock;
+                # this is to avoid needing to specify outputHashes for my own libraries pulled from github
+                allowBuiltinFetchGit = true;
+              };
+              src = pkgs.lib.cleanSource ./.;
 
+              buildInputs = with pkgs; [
+                libftdi1
+                ddcutil
+                libusb1
+                clang
+                llvmPackages.bintools
+              ];
 
-      # TODO figure out "package"
+              nativeBuildInputs = with pkgs; [
+                pkg-config
+              ];
+              preBuild = ''
+                # https://hoverbear.org/blog/rust-bindgen-in-nix/
+                # From: https://github.com/NixOS/nixpkgs/blob/1fab95f5190d087e66a3502481e34e15d62090aa/pkgs/applications/networking/browsers/firefox/common.nix#L247-L253
+                # Set C flags for Rust's bindgen program. Unlike ordinary C
+                # compilation, bindgen does not invoke $CC directly. Instead it
+                # uses LLVM's libclang. To make sure all necessary flags are
+                # included we need to look in a few places.
+                export BINDGEN_EXTRA_CLANG_ARGS="$(< ${pkgs.stdenv.cc}/nix-support/libc-crt1-cflags) \
+                  $(< ${pkgs.stdenv.cc}/nix-support/libc-cflags) \
+                  $(< ${pkgs.stdenv.cc}/nix-support/cc-cflags) \
+                  $(< ${pkgs.stdenv.cc}/nix-support/libcxx-cxxflags) \
+                  ${pkgs.lib.optionalString pkgs.stdenv.cc.isClang "-idirafter ${pkgs.stdenv.cc.cc}/lib/clang/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/include"} \
+                  ${pkgs.lib.optionalString pkgs.stdenv.cc.isGNU "-isystem ${pkgs.stdenv.cc.cc}/include/c++/${pkgs.lib.getVersion pkgs.stdenv.cc.cc} -isystem ${pkgs.stdenv.cc.cc}/include/c++/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/${pkgs.stdenv.hostPlatform.config} -idirafter ${pkgs.stdenv.cc.cc}/lib/gcc/${pkgs.stdenv.hostPlatform.config}/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/include"} \
+                "
+              '';
 
-      # packages = forEachSupportedSystem (
-      #   { pkgs }:
-      #   {
-      #     default =
-      #       let
-      #         manifest = (pkgs.lib.importTOML ./Cargo.toml).package;
-      #       in
-      #       pkgs.rustPlatform.buildRustPackage {
-      #         pname = manifest.name;
-      #         version = manifest.version;
-      #         cargoLock = {
-      #           lockFile = ./Cargo.lock;
-      #           # this is to avoid needing to specify outputHashes for my own libraries pulled from github
-      #           allowBuiltinFetchGit = true;
-      #         };
-      #         src = pkgs.lib.cleanSource ./.;
-
-      #         buildInputs = with pkgs; [
-      #           libftdi1
-      #           ddcutil
-      #           libusb1
-      #           clang
-      #           llvmPackages.bintools
-      #         ];
-
-      #         nativeBuildInputs = with pkgs; [
-      #           pkg-config
-      #         ];
-      #         preBuild = ''
-      #           # https://hoverbear.org/blog/rust-bindgen-in-nix/
-      #           # From: https://github.com/NixOS/nixpkgs/blob/1fab95f5190d087e66a3502481e34e15d62090aa/pkgs/applications/networking/browsers/firefox/common.nix#L247-L253
-      #           # Set C flags for Rust's bindgen program. Unlike ordinary C
-      #           # compilation, bindgen does not invoke $CC directly. Instead it
-      #           # uses LLVM's libclang. To make sure all necessary flags are
-      #           # included we need to look in a few places.
-      #           export BINDGEN_EXTRA_CLANG_ARGS="$(< ${pkgs.stdenv.cc}/nix-support/libc-crt1-cflags) \
-      #             $(< ${pkgs.stdenv.cc}/nix-support/libc-cflags) \
-      #             $(< ${pkgs.stdenv.cc}/nix-support/cc-cflags) \
-      #             $(< ${pkgs.stdenv.cc}/nix-support/libcxx-cxxflags) \
-      #             ${pkgs.lib.optionalString pkgs.stdenv.cc.isClang "-idirafter ${pkgs.stdenv.cc.cc}/lib/clang/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/include"} \
-      #             ${pkgs.lib.optionalString pkgs.stdenv.cc.isGNU "-isystem ${pkgs.stdenv.cc.cc}/include/c++/${pkgs.lib.getVersion pkgs.stdenv.cc.cc} -isystem ${pkgs.stdenv.cc.cc}/include/c++/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/${pkgs.stdenv.hostPlatform.config} -idirafter ${pkgs.stdenv.cc.cc}/lib/gcc/${pkgs.stdenv.hostPlatform.config}/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/include"} \
-      #           "
-      #         '';
-
-      #         env = {
-      #           # Required by bindgen
-      #           LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.lib ];
-      #         };
-      #       };
-      #   }
-      # );
+              env = {
+                # Required by bindgen
+                LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.lib ];
+              };
+            };
+        }
+      );
 
       formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt-rfc-style;
     };
