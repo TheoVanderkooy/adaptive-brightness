@@ -3,6 +3,8 @@
 /// Datasheet for the sensor: https://cdn-shop.adafruit.com/datasheets/TSL25911_Datasheet_EN_v1.pdf
 use embedded_hal::i2c::{I2c, SevenBitAddress};
 
+use std::time::{Duration, SystemTime};
+
 pub struct TSL2591<I: I2c> {
     i2c: I,
 
@@ -133,5 +135,38 @@ impl<I: I2c> TSL2591<I> {
     pub fn read_lux(&mut self) -> Result<f64, anyhow::Error> {
         let (ch0, ch1) = self.read_brightness()?;
         Ok(self.calculate_lux(ch0, ch1))
+    }
+}
+
+/// Caching wrapper for tsl2591::TSL2591 that will remember the most recent value for up to 5s
+pub struct CachedTsl2591<I: I2c> {
+    tsl2591: TSL2591<I>,
+    cached_lux: f64,
+    last_read: SystemTime,
+}
+
+impl<I: I2c> CachedTsl2591<I> {
+    /// Wrap a TSL2591 sensor with a cache of the most recent value (up to 5s)
+    pub fn for_sensor(mut sensor: TSL2591<I>) -> anyhow::Result<Self> {
+        let lux = sensor.read_lux()?;
+        let now = SystemTime::now();
+
+        Ok(Self {
+            tsl2591: sensor,
+            cached_lux: lux,
+            last_read: now,
+        })
+    }
+
+    /// Get the current lux value.
+    /// This is the cached value if last read <5s ago, else read the current value
+    pub fn get_lux(&mut self) -> anyhow::Result<f64> {
+        // update cached brightness if enough time has passed
+        if self.last_read.elapsed()? > Duration::from_secs(5) {
+            self.last_read = SystemTime::now();
+            self.cached_lux = self.tsl2591.read_lux()?;
+        }
+
+        Ok(self.cached_lux)
     }
 }

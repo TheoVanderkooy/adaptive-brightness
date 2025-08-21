@@ -1,57 +1,26 @@
 use std::env;
 use std::os::fd::FromRawFd;
 use std::os::unix::net::UnixListener as StdUnixListener;
-use std::time::{Duration, SystemTime};
 
+use anyhow::Context;
 use smol::LocalExecutor;
 use smol::lock::Mutex;
 use smol::net::unix::{UnixListener, UnixStream};
 use smol::prelude::*;
 
 use ftdi_embedded_hal as hal;
-use tsl2591::TSL2591;
+use tsl2591::{CachedTsl2591, TSL2591};
 
-/// Caching wrapper for tsl2591::TSL2591 that will remember the most recent value for up to 5s
-struct CachedTsl2591 {
-    tsl2591: TSL2591<ftdi_embedded_hal::I2c<ftdi::Device>>,
-    cached_lux: f64,
-    last_read: SystemTime,
-}
+type CachedSensor = CachedTsl2591<ftdi_embedded_hal::I2c<ftdi::Device>>;
 
-impl CachedTsl2591 {
-    /// Wrap a TSL2591 sensor with a cache of the most recent value (up to 5s)
-    fn for_sensor(
-        mut sensor: TSL2591<ftdi_embedded_hal::I2c<ftdi::Device>>,
-    ) -> anyhow::Result<Self> {
-        let lux = sensor.read_lux()?;
-        let now = SystemTime::now();
-
-        Ok(Self {
-            tsl2591: sensor,
-            cached_lux: lux,
-            last_read: now,
-        })
-    }
-
-    /// Get the current lux value.
-    /// This is the cached value if last read <5s ago, else read the current value
-    fn get_lux(&mut self) -> anyhow::Result<f64> {
-        // update cached brightness if enough time has passed
-        if self.last_read.elapsed()? > Duration::from_secs(5) {
-            self.last_read = SystemTime::now();
-            self.cached_lux = self.tsl2591.read_lux()?;
-        }
-
-        Ok(self.cached_lux)
-    }
-}
-
-fn open_brightness_sensor() -> anyhow::Result<TSL2591<ftdi_embedded_hal::I2c<ftdi::Device>>> {
+/// Open the brightness sensor
+fn open_brightness_sensor() -> anyhow::Result<CachedSensor> {
     let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
         .interface(ftdi::Interface::A)
         .open()?;
     let i2c = hal::FtHal::init_default(device)?.i2c()?;
     let sensor = TSL2591::from_i2c(i2c)?;
+    let sensor = CachedSensor::for_sensor(sensor)?;
 
     Ok(sensor)
 }
@@ -59,51 +28,60 @@ fn open_brightness_sensor() -> anyhow::Result<TSL2591<ftdi_embedded_hal::I2c<ftd
 async fn async_main<'a>(
     exec: &'a LocalExecutor<'a>,
     listener: UnixListener,
-    sensor: &'a Mutex<CachedTsl2591>,
+    sensor: &'a Mutex<CachedSensor>,
 ) -> anyhow::Result<()> {
-    // TODO need to open/connect to brightness sensor here
-
-    // also need:
-    // mutex (async?)
-    // maybe a cached value + time of update
+    let mut tasks = vec![];
 
     let mut incoming = listener.incoming();
     let mut i = 0;
     while let Some(stream) = incoming.next().await {
         i += 1;
 
-        // TODO how to get errors back from the handler threads?
-        exec.spawn(conn_handler(stream?, &sensor, i)).detach();
+        // Spawn a task for each inbound connection
+        let t = exec.spawn(conn_handler(stream?, &sensor, i));
+        tasks.push(t);
+
+        // Every time we spawn a new task, go through and check if any previous tasks are done
+        // This is mainly to propagate errors back. Note that errors won't show up right away, only on the next connection
+        // TODO find a better way to do this
+        let mut i = tasks.len();
+        while i > 0 {
+            i -= 1;
+            if tasks[i].is_finished() {
+                tasks.swap_remove(i).await?;
+            }
+        }
     }
 
     Ok(())
 }
 
-async fn conn_handler(mut stream: UnixStream, sensor: &Mutex<CachedTsl2591>, i: i32) {
+async fn conn_handler(
+    mut stream: UnixStream,
+    sensor: &Mutex<CachedSensor>,
+    i: i32,
+) -> anyhow::Result<()> {
     println!("got connection {i}");
 
     let mut read_buf = [0];
     while stream.read_exact(&mut read_buf).await.is_ok() {
-        let lux = match sensor.lock().await.get_lux() {
-            Ok(lux) => lux,
-            Err(e) => {
-                println!("Error reading lux! {e}");
-                break;
-            }
-        };
+        let lux = sensor
+            .lock()
+            .await
+            .get_lux()
+            .with_context(|| "error reading lux")?;
 
         println!("got {read_buf:?},  current lux = {lux}");
 
-        match stream.write_all(&lux.to_be_bytes()).await {
-            Ok(()) => {}
-            Err(e) => {
-                println!("Error writing lux! {e}");
-                break;
-            }
-        };
+        stream
+            .write_all(&lux.to_be_bytes())
+            .await
+            .with_context(|| "error writing response")?;
     }
 
     println!("connection {i} ended");
+
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
@@ -139,8 +117,8 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
+    // open the sensor and wrap it with all the stuff we need
     let sensor = open_brightness_sensor()?;
-    let sensor = CachedTsl2591::for_sensor(sensor)?;
     let sensor = Mutex::new(sensor);
 
     let exec = Box::leak(Box::new(LocalExecutor::new()));
