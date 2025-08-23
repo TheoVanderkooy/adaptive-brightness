@@ -1,9 +1,12 @@
 // in-crate modules
+mod args;
 mod config;
 mod monitor;
 mod piecewise_linear;
 
 // in-crate imports
+use args::*;
+use clap::Parser;
 use config::*;
 use monitor::*;
 use piecewise_linear::*;
@@ -11,112 +14,15 @@ use tsl2591::TSL2591;
 
 // my libraries
 use ddc::{self, ConvertToAnyhow};
-use xdg_dirs::{dirs, xdg_location_of, xdg_user_dir};
+use xdg_dirs::{dirs, xdg_user_dir};
 
 // STD
 use std::fs::{File, OpenOptions};
-use std::path::PathBuf;
 use std::{fs, io, thread, time};
 
 // 3rd party libraries
 use anyhow::Context;
-use clap::{Parser, Subcommand, command};
 use ftdi_embedded_hal as hal;
-
-const CONFIG_PATH: &str = "adaptive-brightness/config.ron";
-
-const DEFAULT_CONFIG: &str = r#"
-(
-monitors: [
-    (
-        identifier: Default,
-        curve: [
-            (0, 10),
-            (250, 100),
-        ],
-    ),
-]
-)
-"#;
-
-#[derive(Debug, PartialEq, clap::Args)]
-#[command(flatten_help = true)]
-struct CollectBrightnessArgs {
-    #[arg(
-        short,
-        long = "out",
-        help = "Path to write brightness data to. Defaults to stdout. If a path is specified, the data will also be pretty-printed to stdout. Format is: date,time,lux"
-    )]
-    out_path: Option<PathBuf>,
-
-    #[arg(
-        short, long = "period",
-        help = "How frequently to poll brightness.",
-        value_parser = humantime::parse_duration,
-        default_value = "5m",
-    )]
-    period: time::Duration,
-}
-
-#[derive(Debug, Subcommand, PartialEq)]
-enum Command {
-    #[command(
-        about = "(default) Poll brightness sensor value and periodically update monitor brightness based on the config file."
-    )]
-    Run,
-
-    #[command(
-        about = "Check configuration file syntax and print out the settings that will be applied for each display device."
-    )]
-    Check,
-
-    #[command(about = "Generate a default config file")]
-    GenConfig,
-
-    CollectBrightness(CollectBrightnessArgs),
-
-    // TODO remove
-    #[command(about = "for testing")]
-    Test,
-}
-
-#[derive(Debug, Parser, PartialEq)]
-#[command(
-    about = "A tool for adaptive brightness on devices that wouldn't otherwise have it built in",
-    author = "Theo Vanderkooy",
-    version
-)]
-struct Args {
-    #[arg(
-        global = true,
-        short,
-        long = "config",
-        help = format!("Path to configuration file. Defaults to `{CONFIG_PATH}` under the user's config directory."),
-    )]
-    config_path: Option<PathBuf>,
-
-    #[command(subcommand)]
-    command: Option<Command>,
-}
-
-impl Args {
-    /// Get the config path, and verify the file exists. This is the either the path passed as an arg, or from the XDG directory if not specified.
-    ///
-    /// This returns error if the path does not exist.
-    fn get_config_path(&self) -> anyhow::Result<PathBuf> {
-        match &self.config_path {
-            Some(path) => {
-                let path = path
-                    .canonicalize()
-                    .with_context(|| format!("Could not open config file `{0}`", path.display()));
-
-                path
-            }
-            None => xdg_location_of(&dirs::CONFIG, CONFIG_PATH)
-                .with_context(|| "Could not open config file"),
-        }
-    }
-}
 
 /// Load the configuration based on arguments.
 /// Uses the file supplied to the CLI, or in the default location if not specified, or the default config if there is no file.
@@ -309,6 +215,7 @@ fn gen_config_file(args: &Args) -> anyhow::Result<()> {
 fn collect_brightness(_args: &Args, collect_args: &CollectBrightnessArgs) -> anyhow::Result<()> {
     let to_file = collect_args.out_path.is_some();
 
+    // TODO device or socket!
     let mut sensor = open_brightness_sensor()?;
 
     let mut writer: csv::Writer<Box<dyn io::Write>> = csv::WriterBuilder::new()
@@ -388,6 +295,8 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     }
     // TODO should make monitors "required" so we can fail early if _some_ monitors aren't present but some are
 
+    // TODO this needs to be a new type to either read from the socket or device
+
     // Connect to the brightness sensor
     let mut sensor = open_brightness_sensor()?;
 
@@ -442,44 +351,4 @@ fn test(_args: &Args) -> anyhow::Result<()> {
     // ...
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_arg_parsing() {
-        assert_eq!(
-            Args {
-                config_path: None,
-                command: None,
-            },
-            Args::try_parse_from(&["executable"]).unwrap()
-        );
-
-        assert_eq!(
-            Args {
-                config_path: Some(PathBuf::from("/some/file")),
-                command: None,
-            },
-            Args::try_parse_from(&["executable", "--config", "/some/file"]).unwrap()
-        );
-
-        assert_eq!(
-            Args {
-                config_path: Some(PathBuf::from("/some/file")),
-                command: Some(Command::Check),
-            },
-            Args::try_parse_from(&["executable", "check", "--config", "/some/file"]).unwrap()
-        );
-
-        assert_eq!(
-            Args {
-                config_path: Some(PathBuf::from("/some/file")),
-                command: Some(Command::Run),
-            },
-            Args::try_parse_from(&["executable", "--config", "/some/file", "run"]).unwrap()
-        );
-    }
 }

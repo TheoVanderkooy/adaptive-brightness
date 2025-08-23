@@ -3,6 +3,22 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
+pub const CONFIG_PATH: &str = "adaptive-brightness/config.ron";
+
+pub const DEFAULT_CONFIG: &str = r#"
+(
+monitors: [
+    (
+        identifier: Default,
+        curve: [
+            (0, 10),
+            (250, 100),
+        ],
+    ),
+]
+)
+"#;
+
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum MonitorId {
     // TODO USB device, hiddev
