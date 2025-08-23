@@ -140,6 +140,7 @@ impl<I: I2c> TSL2591<I> {
 
 /// Caching wrapper for tsl2591::TSL2591 that will remember the most recent value for up to 5s
 pub struct CachedTsl2591<I: I2c> {
+    cache_ttl: Duration,
     tsl2591: TSL2591<I>,
     cached_lux: f64,
     last_read: SystemTime,
@@ -147,11 +148,12 @@ pub struct CachedTsl2591<I: I2c> {
 
 impl<I: I2c> CachedTsl2591<I> {
     /// Wrap a TSL2591 sensor with a cache of the most recent value (up to 5s)
-    pub fn for_sensor(mut sensor: TSL2591<I>) -> anyhow::Result<Self> {
+    pub fn for_sensor(mut sensor: TSL2591<I>, cache_ttl: Duration) -> anyhow::Result<Self> {
         let lux = sensor.read_lux()?;
         let now = SystemTime::now();
 
         Ok(Self {
+            cache_ttl,
             tsl2591: sensor,
             cached_lux: lux,
             last_read: now,
@@ -159,10 +161,10 @@ impl<I: I2c> CachedTsl2591<I> {
     }
 
     /// Get the current lux value.
-    /// This is the cached value if last read <5s ago, else read the current value
+    /// This is the cached value if last read within the TTL, else read the current value
     pub fn get_lux(&mut self) -> anyhow::Result<f64> {
         // update cached brightness if enough time has passed
-        if self.last_read.elapsed()? > Duration::from_secs(5) {
+        if self.last_read.elapsed()? > self.cache_ttl {
             self.last_read = SystemTime::now();
             self.cached_lux = self.tsl2591.read_lux()?;
         }

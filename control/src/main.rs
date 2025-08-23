@@ -3,14 +3,14 @@ mod args;
 mod config;
 mod monitor;
 mod piecewise_linear;
+mod sensor;
 
 // in-crate imports
 use args::*;
-use clap::Parser;
 use config::*;
 use monitor::*;
 use piecewise_linear::*;
-use tsl2591::TSL2591;
+use sensor::*;
 
 // my libraries
 use ddc::{self, ConvertToAnyhow};
@@ -22,7 +22,7 @@ use std::{fs, io, thread, time};
 
 // 3rd party libraries
 use anyhow::Context;
-use ftdi_embedded_hal as hal;
+use clap::Parser;
 
 /// Load the configuration based on arguments.
 /// Uses the file supplied to the CLI, or in the default location if not specified, or the default config if there is no file.
@@ -96,12 +96,14 @@ fn main() -> anyhow::Result<()> {
 
     // process commands
     match args.command {
-        // Primary behaviour: releatedly read brightness and update monitors
-        None | Some(Command::Run) => {
+        // Repeatedly read brightness and update monitors
+        None | Some(Command::Daemon) => {
             println!("args = {args:?}");
             init_ddcutil()?;
             main_loop(&args)
         }
+
+        Some(Command::Read) => read_brightness(&args),
 
         // Test config file: make sure it exists, can be read, and can be parsed
         Some(Command::Check) => {
@@ -126,6 +128,16 @@ fn main() -> anyhow::Result<()> {
             test(&args)
         }
     }
+}
+
+/// Simply read and print out the current brightness
+fn read_brightness(args: &Args) -> anyhow::Result<()> {
+    let mut sensor = Sensor::open(&args.socket_path)?;
+    let lux = sensor.read_lux()? as i32;
+
+    println!("{lux}");
+
+    Ok(())
 }
 
 /// Verify the config file: Make sure it can be found at the expected location (passed through CLI or using XDG config location), and parses properly.
@@ -212,11 +224,10 @@ fn gen_config_file(args: &Args) -> anyhow::Result<()> {
 }
 
 /// Periodically measure the current brightness, and write the result to a file or stdout.
-fn collect_brightness(_args: &Args, collect_args: &CollectBrightnessArgs) -> anyhow::Result<()> {
+fn collect_brightness(args: &Args, collect_args: &CollectBrightnessArgs) -> anyhow::Result<()> {
     let to_file = collect_args.out_path.is_some();
 
-    // TODO device or socket!
-    let mut sensor = open_brightness_sensor()?;
+    let mut sensor = Sensor::open(&args.socket_path)?;
 
     let mut writer: csv::Writer<Box<dyn io::Write>> = csv::WriterBuilder::new()
         .has_headers(false)
@@ -295,10 +306,8 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     }
     // TODO should make monitors "required" so we can fail early if _some_ monitors aren't present but some are
 
-    // TODO this needs to be a new type to either read from the socket or device
-
     // Connect to the brightness sensor
-    let mut sensor = open_brightness_sensor()?;
+    let mut sensor = Sensor::open(&args.socket_path)?;
 
     // Set initial brightness based on current state
     let lux = sensor.read_lux()? as u32;
@@ -334,16 +343,6 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
             5_000
         }));
     }
-}
-
-fn open_brightness_sensor() -> anyhow::Result<TSL2591<ftdi_embedded_hal::I2c<ftdi::Device>>> {
-    let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
-        .interface(ftdi::Interface::A)
-        .open()?;
-    let i2c = hal::FtHal::init_default(device)?.i2c()?;
-    let sensor = TSL2591::from_i2c(i2c)?;
-
-    Ok(sensor)
 }
 
 // TODO remove this once no longer needed

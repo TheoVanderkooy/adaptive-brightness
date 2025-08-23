@@ -1,6 +1,7 @@
 use std::env;
 use std::os::fd::FromRawFd;
 use std::os::unix::net::UnixListener as StdUnixListener;
+use std::time::Duration;
 
 use anyhow::Context;
 use smol::LocalExecutor;
@@ -15,12 +16,14 @@ type CachedSensor = CachedTsl2591<ftdi_embedded_hal::I2c<ftdi::Device>>;
 
 /// Open the brightness sensor
 fn open_brightness_sensor() -> anyhow::Result<CachedSensor> {
+    // vid/pid are for the FTDI device, there are a few others that could be used instead
+    // hardcoded for now
     let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
-        .interface(ftdi::Interface::A)
+        .interface(ftdi::Interface::Any)
         .open()?;
     let i2c = hal::FtHal::init_default(device)?.i2c()?;
     let sensor = TSL2591::from_i2c(i2c)?;
-    let sensor = CachedSensor::for_sensor(sensor)?;
+    let sensor = CachedSensor::for_sensor(sensor, Duration::from_secs(4))?;
 
     Ok(sensor)
 }

@@ -29,9 +29,12 @@ pub(crate) struct CollectBrightnessArgs {
 #[derive(Debug, Subcommand, PartialEq)]
 pub(crate) enum Command {
     #[command(
-        about = "(default) Poll brightness sensor value and periodically update monitor brightness based on the config file."
+        about = "Poll brightness sensor value and periodically update monitor brightness based on the config file."
     )]
-    Run,
+    Daemon,
+
+    #[command(about = "Read current lux value.")]
+    Read,
 
     #[command(
         about = "Check configuration file syntax and print out the settings that will be applied for each display device."
@@ -132,7 +135,7 @@ mod tests {
         assert_eq!(
             Args {
                 config_path: Some(PathBuf::from("/some/file")),
-                command: Some(Command::Run),
+                command: Some(Command::Daemon),
                 socket_path: Some(PathBuf::from("/some/socket")),
             },
             Args::try_parse_from(&[
