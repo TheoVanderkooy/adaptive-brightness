@@ -1,6 +1,7 @@
 [package]
-name = "adaptive-brightness"
-version = "0.1.3"
+name = "abc"
+description = "Adaptive Brightness Control"
+version = "0.1.4"
 edition = "2024"
 
 [dependencies]

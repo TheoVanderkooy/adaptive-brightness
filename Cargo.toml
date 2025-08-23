@@ -2,6 +2,6 @@
 resolver = "3"
 members = [
     "brightness-server",
-    "adaptive-brightness",
+    "control",
     "tsl2591"
 ]

@@ -92,7 +92,7 @@
           default =
             let
               # note: this builds the package based on the main binary, even though there are multiple projects in the workspace
-              manifest = (pkgs.lib.importTOML ./adaptive-brightness/Cargo.toml).package;
+              manifest = (pkgs.lib.importTOML ./control/Cargo.toml).package;
             in
             pkgs.rustPlatform.buildRustPackage {
               pname = manifest.name;
