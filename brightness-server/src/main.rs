@@ -110,9 +110,11 @@ fn main() -> anyhow::Result<()> {
             // TODO: use systemd crate instead of doing this manually
             // https://docs.rs/systemd/latest/systemd/daemon/struct.ListenFds.html
             // https://www.freedesktop.org/software/systemd/man/latest/systemd.socket.html
-            if env::var("LISTEN_FDS") != Ok("3".to_string()) {
+            let listen_fds = env::var("LISTEN_FDS");
+            if listen_fds != Ok("1".to_string()) {
                 anyhow::bail!(
-                    "no socket path provided and unexpected value of LISTEN_FDS if managed by systemd"
+                    "no socket path provided and unexpected value of LISTEN_FDS if managed by systemd\nLISTEN_FDS: {0:?}",
+                    listen_fds
                 );
             }
 
