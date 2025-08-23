@@ -142,7 +142,7 @@ mod tests {
                 "executable",
                 "--config",
                 "/some/file",
-                "run",
+                "daemon",
                 "-s",
                 "/some/socket"
             ])
