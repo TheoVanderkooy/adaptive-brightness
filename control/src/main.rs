@@ -24,6 +24,8 @@ use std::{fs, io, thread, time};
 use anyhow::Context;
 use clap::Parser;
 
+const DEFAULT_SOCK_PATH: &str = "/tmp/abc.sock";
+
 /// Load the configuration based on arguments.
 /// Uses the file supplied to the CLI, or in the default location if not specified, or the default config if there is no file.
 fn get_config(args: &Args) -> anyhow::Result<Config> {
@@ -132,7 +134,16 @@ fn main() -> anyhow::Result<()> {
 
 /// Simply read and print out the current brightness
 fn read_brightness(args: &Args) -> anyhow::Result<()> {
-    let mut sensor = Sensor::open(&args.socket_path)?;
+    let sock_path = &args.socket_path;
+
+    let sensor = Sensor::open(sock_path);
+    let mut sensor = if let Err(e) = &sensor && sock_path.is_none() {
+        println!("Couldn't open sensor ({e}), trying default socket path...");
+        // if no path specified, and loading the device fails, check for default system socket
+        Sensor::open(&Some(DEFAULT_SOCK_PATH))?
+    } else {
+        sensor?
+    };
     let lux = sensor.read_lux()? as i32;
 
     println!("{lux}");
