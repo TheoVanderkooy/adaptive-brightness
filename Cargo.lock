@@ -17,6 +17,7 @@ dependencies = [
  "libddcutil2",
  "ron",
  "serde",
+ "smol",
  "tsl2591",
  "xdg-dirs",
 ]

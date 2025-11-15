@@ -127,6 +127,6 @@ fn main() -> anyhow::Result<()> {
     let sensor = Mutex::new(sensor);
 
     let exec = Box::leak(Box::new(LocalExecutor::new()));
-    let task = exec.spawn(async_main(&exec, listener, &sensor));
+    let task = exec.spawn(async_main(exec, listener, &sensor));
     smol::block_on(exec.run(task))
 }

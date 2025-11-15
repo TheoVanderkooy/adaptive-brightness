@@ -19,3 +19,4 @@ humantime = "2.2.0"
 csv = "1.3.1"
 chrono = "0.4.41"
 tsl2591 = { version = "0.1.0", path = "../tsl2591" }
+smol = "2.0.2"

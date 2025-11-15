@@ -1,12 +1,5 @@
 
 
-- [x] Figure out C/rust connection to the sensor
-- [x] control monitors calling ddcutil
-  - [x] libddcutil: https://deepwiki.com/rockowitz/ddcutil (there is a rust crate, but it's out of date and doesn't work)
-  - [x] new wrapper for libddcutil
-- [x] smarter monitor detection
-- [x] configuration file
-- [x] make into a nix pkg + daemon + systemd service
 - [ ] interface to plasma libs for software brightness on second monitor?
 - [ ] error handling:
   - (in-process vs letting systemd restart)
@@ -26,13 +19,20 @@
 - [ ] proper logging library?
 - [ ] home-manager module?
 - [ ] configure sensor details: specify serial number of the ftdi device?
-- [ ] separate brightness server:
+- [x] separate brightness server:
   - [x] split out a binary just for reading & exposing brightness over a socket (to multiple consumers)
-  - [ ] move the main functionality to read from the socket
-  - [ ] separate CLI to read the current brightness?
+  - [x] move the main functionality to read from the socket
+  - [x] separate CLI to read the current brightness?
+- [ ] make _brightness_ (not lux) observable.. abc daemon could publish that to a socket?
+- [ ] UI!
+  - [ ] make the daemon expose stuff over a socket, similar to brightness daemon
+    - [ ] more than single-byte "commands" -- can still be single threaded if client sends partial command?
+    - [ ] also needs args for where to expose its socket, as well as brightness input socket
+  - [ ] expose lix, brightness, monitors, config, ...
+  - [ ] allow restarting daemon and/or reloading the config/redetecting monitors
+  - [ ] editing config from the UI
+  - [ ]
 
-systemd socket unit: https://ilmanzo.github.io/post/systemd-socket-activated-services/
- - seems no direct way to do this with async-std...
 
 
 libddcutil:

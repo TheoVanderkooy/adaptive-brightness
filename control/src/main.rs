@@ -1,6 +1,7 @@
 // in-crate modules
 mod args;
 mod config;
+mod daemon_state;
 mod monitor;
 mod piecewise_linear;
 mod sensor;
@@ -8,12 +9,14 @@ mod sensor;
 // in-crate imports
 use args::*;
 use config::*;
+use daemon_state::*;
 use monitor::*;
 use piecewise_linear::*;
 use sensor::*;
 
 // my libraries
 use ddc::{self, ConvertToAnyhow};
+use smol::LocalExecutor;
 use xdg_dirs::{dirs, xdg_user_dir};
 
 // STD
@@ -23,6 +26,7 @@ use std::{fs, io, thread, time};
 // 3rd party libraries
 use anyhow::Context;
 use clap::Parser;
+use smol::lock::Mutex;
 
 const DEFAULT_SOCK_PATH: &str = "/tmp/abc.sock";
 
@@ -137,7 +141,9 @@ fn read_brightness(args: &Args) -> anyhow::Result<()> {
     let sock_path = &args.socket_path;
 
     let sensor = Sensor::open(sock_path);
-    let mut sensor = if let Err(e) = &sensor && sock_path.is_none() {
+    let mut sensor = if let Err(e) = &sensor
+        && sock_path.is_none()
+    {
         println!("Couldn't open sensor ({e}), trying default socket path...");
         // if no path specified, and loading the device fails, check for default system socket
         Sensor::open(&Some(DEFAULT_SOCK_PATH))?
@@ -289,7 +295,7 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     }
 
     // Construct internal state for each device
-    let mut monitors: Vec<MonitorState> = config_mapping
+    let monitors: Vec<MonitorState> = config_mapping
         .iter()
         .filter_map(|&(ref d, mc)| {
             // filter out monitors that don't match any config
@@ -320,40 +326,57 @@ fn main_loop(args: &Args) -> anyhow::Result<()> {
     // Connect to the brightness sensor
     let mut sensor = Sensor::open(&args.socket_path)?;
 
+    let mut state = Mutex::new(DaemonState {
+        lux: sensor.read_lux()? as u32,
+        monitors: monitors,
+    });
+
     // Set initial brightness based on current state
-    let lux = sensor.read_lux()? as u32;
-    for m in &mut monitors {
-        m.set_brightness_for_lux(lux)?;
+    let s = state.get_mut();
+    for m in &mut s.monitors {
+        m.set_brightness_for_lux(s.lux)?;
     }
 
-    let mut iters_since_last_update = 0;
+    // Main daemon loop: periodically wake up, read current brightness,
+    // and update all monitors accordingly
+    let mut main_loop = async || -> anyhow::Result<()> {
+        let mut iters_since_last_update = 0;
 
-    // Main loop: periodically wake up to update all monitors
-    loop {
-        let mut updated = false;
-        let lux = sensor.read_lux()? as u32;
+        // Main loop: periodically wake up to update all monitors
+        loop {
+            let mut updated = false;
+            let lux;
+            {
+                let mut s = state.lock().await;
+                lux = sensor.read_lux()? as u32;
+                s.lux = lux;
 
-        for m in &mut monitors {
-            updated = updated || m.update_brightness(lux)?;
-        }
-
-        if updated {
-            iters_since_last_update = 0;
-        } else {
-            iters_since_last_update += 1;
-            if iters_since_last_update >= 100 {
-                iters_since_last_update = 0;
-                println!("lux={lux}");
+                for m in &mut s.monitors {
+                    updated = updated || m.update_brightness(lux)?;
+                }
             }
-        }
 
-        // Don't sleep as long if we may be off-target
-        thread::sleep(time::Duration::from_millis(if updated {
-            100
-        } else {
-            5_000
-        }));
-    }
+            if updated {
+                iters_since_last_update = 0;
+            } else {
+                iters_since_last_update += 1;
+                if iters_since_last_update >= 100 {
+                    iters_since_last_update = 0;
+                    println!("lux={lux}");
+                }
+            }
+
+            // Don't sleep as long if we may be off-target
+            thread::sleep(time::Duration::from_millis(if updated {
+                100
+            } else {
+                5_000
+            }));
+        }
+    };
+    let exec = LocalExecutor::new();
+    let main = exec.spawn(main_loop());
+    smol::block_on(exec.run(main))
 }
 
 // TODO remove this once no longer needed
