@@ -7,6 +7,7 @@
   - [ ] reading config = fatal? warning + use default?
   - [ ] errors reading sensor = retryable in general, too many = fatal?
   - [ ] error setting brightness = retryable in general, too many = fatal
+  - [ ] "required" monitors?
 - [ ] commands:
   - [x] parsing config file
   - [x] detecting monitors

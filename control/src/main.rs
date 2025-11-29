@@ -1,7 +1,7 @@
 // in-crate modules
 mod args;
 mod config;
-mod daemon_state;
+mod daemon;
 mod monitor;
 mod piecewise_linear;
 mod sensor;
@@ -9,26 +9,25 @@ mod sensor;
 // in-crate imports
 use args::*;
 use config::*;
-use daemon_state::*;
-use monitor::*;
-use piecewise_linear::*;
+use daemon::*;
 use sensor::*;
 
 // my libraries
 use ddc::{self, ConvertToAnyhow};
-use smol::LocalExecutor;
 use xdg_dirs::{dirs, xdg_user_dir};
 
 // STD
-use std::fs::{File, OpenOptions};
-use std::{fs, io, thread, time};
+use std::{
+    fs::{self, File, OpenOptions},
+    io, thread,
+};
 
 // 3rd party libraries
 use anyhow::Context;
 use clap::Parser;
-use smol::lock::Mutex;
 
-const DEFAULT_SOCK_PATH: &str = "/tmp/abc.sock";
+const DEFAULT_BRIGHTNESS_SOCK_PATH: &str = "/tmp/abc-brightness.sock";
+const DEFAULT_CONTROL_SOCK_PATH: &str = "/tmp/abc-control.sock";
 
 /// Load the configuration based on arguments.
 /// Uses the file supplied to the CLI, or in the default location if not specified, or the default config if there is no file.
@@ -105,8 +104,7 @@ fn main() -> anyhow::Result<()> {
         // Repeatedly read brightness and update monitors
         None | Some(Command::Daemon) => {
             println!("args = {args:?}");
-            init_ddcutil()?;
-            main_loop(&args)
+            daemon_main(&args)
         }
 
         Some(Command::Read) => read_brightness(&args),
@@ -138,7 +136,7 @@ fn main() -> anyhow::Result<()> {
 
 /// Simply read and print out the current brightness
 fn read_brightness(args: &Args) -> anyhow::Result<()> {
-    let sock_path = &args.socket_path;
+    let sock_path = &args.brightness_socket_path;
 
     let sensor = Sensor::open(sock_path);
     let mut sensor = if let Err(e) = &sensor
@@ -146,7 +144,7 @@ fn read_brightness(args: &Args) -> anyhow::Result<()> {
     {
         println!("Couldn't open sensor ({e}), trying default socket path...");
         // if no path specified, and loading the device fails, check for default system socket
-        Sensor::open(&Some(DEFAULT_SOCK_PATH))?
+        Sensor::open(&Some(DEFAULT_BRIGHTNESS_SOCK_PATH))?
     } else {
         sensor?
     };
@@ -244,7 +242,7 @@ fn gen_config_file(args: &Args) -> anyhow::Result<()> {
 fn collect_brightness(args: &Args, collect_args: &CollectBrightnessArgs) -> anyhow::Result<()> {
     let to_file = collect_args.out_path.is_some();
 
-    let mut sensor = Sensor::open(&args.socket_path)?;
+    let mut sensor = Sensor::open(&args.brightness_socket_path)?;
 
     let mut writer: csv::Writer<Box<dyn io::Write>> = csv::WriterBuilder::new()
         .has_headers(false)
@@ -268,115 +266,6 @@ fn collect_brightness(args: &Args, collect_args: &CollectBrightnessArgs) -> anyh
 
         thread::sleep(collect_args.period);
     }
-}
-
-/// Default daemon behaviour: Read config file, then read brightness and update each monitor forever.
-fn main_loop(args: &Args) -> anyhow::Result<()> {
-    // Read in configuration, or load default configuration
-    let config = get_config(args)?;
-    println!("Loaded configuration: {config:?}");
-
-    // Detect displays and match them up with configuration settings
-    let displays = get_displays()?;
-    let config_mapping = match_displays_to_config(&displays, &config)?;
-
-    println!("Detected displays:");
-    for (d, conf) in &config_mapping {
-        print!(
-            "    {0:<3}  {1:<13}  {2:<13}: ",
-            d.manufacturer(),
-            d.model(),
-            d.serial_number()
-        );
-        match conf {
-            None => println!("no matching config"),
-            Some(mc) => println!("curve={0:?}", mc.curve),
-        }
-    }
-
-    // Construct internal state for each device
-    let monitors: Vec<MonitorState> = config_mapping
-        .iter()
-        .filter_map(|&(ref d, mc)| {
-            // filter out monitors that don't match any config
-            if let Some(mc) = mc {
-                Some((*d, mc))
-            } else {
-                None
-            }
-        })
-        .map(|(d, mc)| {
-            // Open each display and build their state
-            let curve = PiecewiseLinear::from_steps(mc.curve.clone()).ok_or_else(|| {
-                anyhow::anyhow!("Invalid brightness curve for monitor {0:?}", mc.identifier)
-            })?;
-
-            let d = ddc::Display::from_display_info(d).anyhow()?;
-
-            Ok(MonitorState::for_display(d, curve))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-
-    // Sanity check: if no monitors, there's nothing to do
-    if monitors.len() < 1 {
-        anyhow::bail!("no monitors detected matching any configuration values, exiting ...");
-    }
-    // TODO should make monitors "required" so we can fail early if _some_ monitors aren't present but some are
-
-    // Connect to the brightness sensor
-    let mut sensor = Sensor::open(&args.socket_path)?;
-
-    let mut state = Mutex::new(DaemonState {
-        lux: sensor.read_lux()? as u32,
-        monitors: monitors,
-    });
-
-    // Set initial brightness based on current state
-    let s = state.get_mut();
-    for m in &mut s.monitors {
-        m.set_brightness_for_lux(s.lux)?;
-    }
-
-    // Main daemon loop: periodically wake up, read current brightness,
-    // and update all monitors accordingly
-    let mut main_loop = async || -> anyhow::Result<()> {
-        let mut iters_since_last_update = 0;
-
-        // Main loop: periodically wake up to update all monitors
-        loop {
-            let mut updated = false;
-            let lux;
-            {
-                let mut s = state.lock().await;
-                lux = sensor.read_lux()? as u32;
-                s.lux = lux;
-
-                for m in &mut s.monitors {
-                    updated = updated || m.update_brightness(lux)?;
-                }
-            }
-
-            if updated {
-                iters_since_last_update = 0;
-            } else {
-                iters_since_last_update += 1;
-                if iters_since_last_update >= 100 {
-                    iters_since_last_update = 0;
-                    println!("lux={lux}");
-                }
-            }
-
-            // Don't sleep as long if we may be off-target
-            thread::sleep(time::Duration::from_millis(if updated {
-                100
-            } else {
-                5_000
-            }));
-        }
-    };
-    let exec = LocalExecutor::new();
-    let main = exec.spawn(main_loop());
-    smol::block_on(exec.run(main))
 }
 
 // TODO remove this once no longer needed

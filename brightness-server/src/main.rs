@@ -10,6 +10,7 @@ use smol::net::unix::{UnixListener, UnixStream};
 use smol::prelude::*;
 
 use ftdi_embedded_hal as hal;
+use systemd::daemon::listen_fds;
 use tsl2591::{CachedTsl2591, TSL2591};
 
 type CachedSensor = CachedTsl2591<ftdi_embedded_hal::I2c<ftdi::Device>>;
@@ -106,18 +107,12 @@ fn main() -> anyhow::Result<()> {
             UnixListener::bind(p)?
         }
         None => {
-            // systemd uses this env var to communicate how many sockets
-            // TODO: use systemd crate instead of doing this manually
-            // https://docs.rs/systemd/latest/systemd/daemon/struct.ListenFds.html
+            // systemd uses $LISTEN_FDS to communicate how many sockets have been passed in
             // https://www.freedesktop.org/software/systemd/man/latest/systemd.socket.html
-            let listen_fds = env::var("LISTEN_FDS");
-            if listen_fds != Ok("1".to_string()) {
-                anyhow::bail!(
-                    "no socket path provided and unexpected value of LISTEN_FDS if managed by systemd\nLISTEN_FDS: {0:?}",
-                    listen_fds
-                );
+            let lfds = listen_fds(false).with_context(|| "no socket path provided, and none passed by systemd")?;
+            if lfds.len() != 1 {
+                anyhow::bail!("unexpected number of sockets provided by systemd: {0:?}", lfds.len());
             }
-
             unsafe { StdUnixListener::from_raw_fd(3) }.try_into()?
         }
     };

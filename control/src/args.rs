@@ -68,11 +68,19 @@ pub(crate) struct Args {
 
     #[arg(
         global = true,
-        short = 's',
+        short = 'b',
         long = "brightness-socket",
         help = "Path of the brightness server's socket from which to read brightness values. If not specified, the device will be opened directly without writing brightness to any socket."
     )]
-    pub socket_path: Option<PathBuf>,
+    pub brightness_socket_path: Option<PathBuf>,
+
+    #[arg(
+        global = true,
+        short = 's',
+        long = "daemon-socket",
+        help = "Path of the daemon's control socket. If not specified, and a socket is not passed by systemd, the daemon will not open a control socket."
+    )]
+    pub control_socket_path: Option<PathBuf>,
 
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -109,7 +117,8 @@ mod tests {
             Args {
                 config_path: None,
                 command: None,
-                socket_path: None,
+                brightness_socket_path: None,
+                control_socket_path: None,
             },
             Args::try_parse_from(&["executable"]).unwrap()
         );
@@ -118,7 +127,8 @@ mod tests {
             Args {
                 config_path: Some(PathBuf::from("/some/file")),
                 command: None,
-                socket_path: None,
+                brightness_socket_path: None,
+                control_socket_path: None,
             },
             Args::try_parse_from(&["executable", "--config", "/some/file"]).unwrap()
         );
@@ -127,7 +137,8 @@ mod tests {
             Args {
                 config_path: Some(PathBuf::from("/some/file")),
                 command: Some(Command::Check),
-                socket_path: None,
+                brightness_socket_path: None,
+                control_socket_path: None,
             },
             Args::try_parse_from(&["executable", "check", "--config", "/some/file"]).unwrap()
         );
@@ -136,15 +147,18 @@ mod tests {
             Args {
                 config_path: Some(PathBuf::from("/some/file")),
                 command: Some(Command::Daemon),
-                socket_path: Some(PathBuf::from("/some/socket")),
+                brightness_socket_path: Some(PathBuf::from("/some/socket")),
+                control_socket_path: Some(PathBuf::from("/some/other/socket")),
             },
             Args::try_parse_from(&[
                 "executable",
                 "--config",
                 "/some/file",
                 "daemon",
+                "-b",
+                "/some/socket",
                 "-s",
-                "/some/socket"
+                "/some/other/socket",
             ])
             .unwrap()
         );
