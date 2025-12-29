@@ -1,4 +1,6 @@
+use std::ops::Deref;
 use std::os::unix::net::UnixListener as StdUnixListener;
+use std::rc::Rc;
 use std::{os::fd::FromRawFd, time};
 
 use anyhow::Context;
@@ -29,7 +31,11 @@ async fn main_daemon_loop(mut sensor: Sensor, state: &Mutex<DaemonState>) -> any
         let mut updated = false;
         let lux;
         {
-            lux = sensor.read_lux_async().await? as u32;
+            let ret = sensor.read_lux_async().await;
+            if let Err(e) = &ret {
+                println!("error reading lux: {e:?}");
+            }
+            lux = ret? as u32;
             let mut s = state.lock().await;
             s.lux = lux;
 
@@ -60,11 +66,13 @@ async fn main_daemon_loop(mut sensor: Sensor, state: &Mutex<DaemonState>) -> any
 
 /// Control loop:
 /// Listens on the control socket and responds to external queries/commands
-async fn control_loop<'a>(
-    listener: &UnixListener,
-    exec: &'a LocalExecutor<'a>,
+async fn control_loop<'a, 'e>(
+    listener: &'a UnixListener,
+    exec: impl Deref<Target = LocalExecutor<'e>>,
     state: &'a Mutex<DaemonState>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+  where 'a : 'e
+{
     let mut incoming = listener.incoming();
     println!("control loop starting on {0:?}", listener.local_addr());
 
@@ -210,18 +218,19 @@ pub(crate) fn daemon_main(args: &Args) -> anyhow::Result<()> {
             m.set_brightness_for_lux(s.lux)?;
         }
 
-        let exec = Box::leak(Box::new(LocalExecutor::new()));
+        // Set up async machinery for the various "threads"
+        let exec = Rc::new(LocalExecutor::new());
         let t_main = main_daemon_loop(sensor, &state);
 
         if let Some(control_listener) = &control_listener {
-            let t_control = exec.spawn(control_loop(control_listener, exec, &state));
-            if let Err(e) = smol::block_on(exec.run(t_main)) {
-                println!("Main loop got an error! {e:?}");
-            }
+            let fc = control_loop(control_listener, exec.clone(), &state);
+            let t_control = exec.spawn(fc);
+            smol::block_on(exec.run(t_main))?;
             // after the main loop exits: cancel the control loop
             if let Some(Err(e)) = smol::block_on(t_control.cancel()) {
                 println!("Error from control loop!: {e:?}");
             }
+            println!("control loop done, restarting...");
         } else {
             if let Err(e) = smol::block_on(t_main) {
                 println!("Main loop got an error! {e:?}");
