@@ -105,6 +105,7 @@ async fn control_connection_handler_inner(
                 .with_context(|| "write error")?;
         }
         // TODO: `r`: restart the daemon
+        // TODO: `p`: trigger panic?
         // TODO: other commands to e.g. reload config?
         _ => {
             anyhow::bail!("unknown command {command}");

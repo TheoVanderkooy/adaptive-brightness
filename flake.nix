@@ -31,6 +31,13 @@
             };
           }
         );
+      ui_libs = pkgs: with pkgs; [
+        # Libraries needed by (iced -> winit)
+        libxkbcommon
+        wayland
+        # fontconfig
+        # libGL
+      ];
     in
     {
       overlays.default = final: prev: {
@@ -53,7 +60,8 @@
 
       devShells = forEachSupportedSystem (
         { pkgs }:
-        {
+        let ui_deps = ui_libs pkgs;
+        in {
           default = pkgs.mkShell {
             packages = with pkgs; [
               rustToolchain
@@ -69,7 +77,7 @@
               libusb1
               clang
               llvmPackages.bintools
-            ];
+            ] ++ ui_deps;
 
             nativeBuildInputs = with pkgs; [
               pkg-config
@@ -82,6 +90,12 @@
               # Required by bindgen
               LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.lib ];
             };
+
+            # for developement: iced/winit need these libraries, so put them in the library path.
+            # for building we patch the binary instead
+            shellHook = ''
+              export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${pkgs.lib.makeLibraryPath ui_deps}
+            '';
           };
         }
       );
@@ -93,6 +107,7 @@
             let
               # note: this builds the package based on the main binary, even though there are multiple projects in the workspace
               manifest = (pkgs.lib.importTOML ./control/Cargo.toml).package;
+              ui_deps = ui_libs pkgs;
             in
             pkgs.rustPlatform.buildRustPackage {
               pname = manifest.name;
@@ -110,11 +125,13 @@
                 libusb1
                 clang
                 llvmPackages.bintools
-              ];
+              ] ++ ui_deps;
 
               nativeBuildInputs = with pkgs; [
                 pkg-config
               ];
+
+              # TODO look into bindgenHook instead..
               preBuild = ''
                 # https://hoverbear.org/blog/rust-bindgen-in-nix/
                 # From: https://github.com/NixOS/nixpkgs/blob/1fab95f5190d087e66a3502481e34e15d62090aa/pkgs/applications/networking/browsers/firefox/common.nix#L247-L253
@@ -129,6 +146,21 @@
                   ${pkgs.lib.optionalString pkgs.stdenv.cc.isClang "-idirafter ${pkgs.stdenv.cc.cc}/lib/clang/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/include"} \
                   ${pkgs.lib.optionalString pkgs.stdenv.cc.isGNU "-isystem ${pkgs.stdenv.cc.cc}/include/c++/${pkgs.lib.getVersion pkgs.stdenv.cc.cc} -isystem ${pkgs.stdenv.cc.cc}/include/c++/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/${pkgs.stdenv.hostPlatform.config} -idirafter ${pkgs.stdenv.cc.cc}/lib/gcc/${pkgs.stdenv.hostPlatform.config}/${pkgs.lib.getVersion pkgs.stdenv.cc.cc}/include"} \
                 "
+              '';
+
+              # iced uses winit which dynamically loads certain libraries depending on the environment.
+              # nix needs to know which libraries it needs, so we need to patch the binary
+              # https://nixos.wiki/wiki/Packaging/Binaries
+              # https://github.com/NixOS/nixpkgs/blob/master/pkgs/build-support/rust/build-rust-crate/default.nix
+              postBuild = ''
+                for dir in target/*; do
+                  if [ -f $dir/release/abc-ui ]; then
+                    echo patching $dir/release/abc-ui ...
+                    patchelf --force-rpath --add-rpath ${pkgs.lib.makeLibraryPath ui_deps} $dir/release/abc-ui
+                    patchelf --add-needed libwayland-client.so $dir/release/abc-ui
+                    patchelf --add-needed libxkbcommon.so $dir/release/abc-ui
+                  fi
+                done
               '';
 
               env = {
