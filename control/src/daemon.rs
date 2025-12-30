@@ -13,7 +13,7 @@ use smol::stream::StreamExt;
 use smol::{LocalExecutor, Timer, lock::Mutex, net::unix::UnixListener};
 use systemd::daemon::listen_fds;
 
-use crate::monitor::MonitorStatus;
+use crate::monitor::{DisplayInfoDisplayName, MonitorStatus};
 use crate::{
     args::Args, get_config, get_displays, init_ddcutil, match_displays_to_config,
     monitor::MonitorState, piecewise_linear::PiecewiseLinear, sensor::Sensor,
@@ -22,6 +22,7 @@ use crate::{
 pub(crate) struct DaemonState {
     pub lux: u32,
     pub monitors: Vec<MonitorState>,
+    pub unmanaged_monitors: Vec<String>,
 }
 
 /// A snapshot of the current status that can be serialized & shared with other clients.
@@ -29,6 +30,7 @@ pub(crate) struct DaemonState {
 pub(crate) struct DaemonStatus {
     pub lux: u32,
     pub monitors: Vec<MonitorStatus>,
+    pub unmanaged_monitors: Vec<String>,
 }
 
 impl DaemonState {
@@ -37,6 +39,7 @@ impl DaemonState {
         DaemonStatus {
             lux: self.lux,
             monitors,
+            unmanaged_monitors: self.unmanaged_monitors.clone(),
         }
     }
 }
@@ -245,30 +248,38 @@ pub(crate) fn daemon_main(args: &Args) -> anyhow::Result<()> {
                     anyhow::anyhow!("Invalid brightness curve for monitor {0:?}", mc.identifier)
                 })?;
 
-                let display_name = format!(
-                    "{0} {1} {2}",
-                    d.manufacturer(),
-                    d.model(),
-                    d.serial_number()
-                );
+                let display_name = d.display_name();
                 let d = ddc::Display::from_display_info(d).anyhow()?;
 
                 Ok(MonitorState::for_display(d, display_name, curve))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
+        // Remember monitors we're not doing anything with, just for displaying via UI
+        let unmanaged_monitors = config_mapping
+            .iter()
+            .filter_map(|&(ref d, mc)| {
+                if let None = mc {
+                    Some(d.display_name())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
         // Sanity check: if no monitors, there's nothing to do
         if monitors.len() < 1 {
             anyhow::bail!("no monitors detected matching any configuration values, exiting ...");
         }
-// TODO consider "required" monitors
+        // TODO consider "required" monitors
 
         // Connect to the brightness sensor
         let mut sensor = Sensor::open_async(&args.brightness_socket_path)?;
 
         let mut state = Mutex::new(DaemonState {
             lux: sensor.read_lux()? as u32,
-            monitors: monitors,
+            monitors,
+            unmanaged_monitors,
         });
 
         // Set initial brightness based on current state

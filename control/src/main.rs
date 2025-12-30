@@ -176,12 +176,24 @@ fn read_status(args: &Args) -> anyhow::Result<()> {
         .next()
         .with_context(|| "Didn't get a response from the daemon")??;
 
-    let max_monitor_name = status.monitors.iter().map(|ms| ms.display_name.len()).max().unwrap_or(0);
+    let max_monitor_name_len = status
+        .monitors
+        .iter()
+        .map(|ms| ms.display_name.len())
+        .max()
+        .unwrap_or(0);
 
     println!("Current lux:  {0}", status.lux);
-    println!("Monitor brightness:");
+    println!("\nMonitor brightness:");
     for ms in status.monitors {
-        println!("  {1:<0$}:  {2}  (target={3})", max_monitor_name, ms.display_name, ms.brightness, ms.target_brightness);
+        println!(
+            "  {1:<0$}:  {2}  (target={3})",
+            max_monitor_name_len, ms.display_name, ms.brightness, ms.target_brightness
+        );
+    }
+    println!("\nUnmanaged monitors:");
+    for m in status.unmanaged_monitors {
+        println!("  {0}", m);
     }
 
     Ok(())

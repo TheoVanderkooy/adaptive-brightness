@@ -117,6 +117,17 @@ impl MonitorState {
     }
 }
 
+/// Convenient formatting as a single identifier string
+pub trait DisplayInfoDisplayName {
+    fn display_name(&self) -> String;
+}
+
+impl DisplayInfoDisplayName for ddc::DisplayInfo {
+    fn display_name(&self) -> String {
+        format!("{0} {1} {2}", self.manufacturer(), self.model(), self.serial_number())
+    }
+}
+
 #[test]
 fn test_new_target_brightness() {
     for new in 46..=54 {
