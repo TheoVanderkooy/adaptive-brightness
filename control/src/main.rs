@@ -19,7 +19,7 @@ use xdg_dirs::{dirs, xdg_user_dir};
 // STD
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    io::{self, Write},
     os::unix::net::UnixStream,
     path::PathBuf,
     str::FromStr,
@@ -133,10 +133,7 @@ fn main() -> anyhow::Result<()> {
         }
 
         // testing
-        Some(Command::Test) => {
-            init_ddcutil()?;
-            test(&args)
-        }
+        Some(Command::Test) => test(&args),
     }
 }
 
@@ -174,12 +171,18 @@ fn read_status(args: &Args) -> anyhow::Result<()> {
     // Send 's' to the socket to get the status
     stream.write_all(&[b's'])?;
 
-    // Read & print response
-    let mut buf: [u8; 4] = [0; 4];
-    stream.read_exact(&mut buf)?;
-    let lux = i32::from_be_bytes(buf);
+    let status = serde_json::Deserializer::from_reader(stream)
+        .into_iter::<DaemonStatus>()
+        .next()
+        .with_context(|| "Didn't get a response from the daemon")??;
 
-    println!("Current lux: {lux}");
+    let max_monitor_name = status.monitors.iter().map(|ms| ms.display_name.len()).max().unwrap_or(0);
+
+    println!("Current lux:  {0}", status.lux);
+    println!("Monitor brightness:");
+    for ms in status.monitors {
+        println!("  {1:<0$}:  {2}  (target={3})", max_monitor_name, ms.display_name, ms.brightness, ms.target_brightness);
+    }
 
     Ok(())
 }

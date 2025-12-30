@@ -2,16 +2,27 @@
 use crate::piecewise_linear::PiecewiseLinear;
 
 use ddc::{self, ConvertToAnyhow};
+use serde::{Deserialize, Serialize};
 
+/// Internal state of monitors so we can update brightness appropriately.
 #[derive(Debug)]
 pub struct MonitorState {
     // Configuration
     display: ddc::Display,
     curve: PiecewiseLinear,
-
+    // Serializable identification
+    display_name: String,
     // State
     target: u16,
     brightness: u16,
+}
+
+/// Serializable monitor status to be exposed to client apps monitoring the daemon state.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MonitorStatus {
+    pub display_name: String,
+    pub target_brightness: u16,
+    pub brightness: u16,
 }
 
 impl MonitorState {
@@ -19,10 +30,15 @@ impl MonitorState {
     const ROUND_TO_NEAREST: u16 = 5;
 
     /// Construct a `MonitorState` with the given brightness curve from a `DisplayInfo`.
-    pub fn for_display(display: ddc::Display, curve: PiecewiseLinear) -> Self {
+    pub fn for_display<DN: ToString>(
+        display: ddc::Display,
+        display_name: DN,
+        curve: PiecewiseLinear,
+    ) -> Self {
         MonitorState {
             display,
             curve,
+            display_name: display_name.to_string(),
             target: 0,
             brightness: 0,
         }
@@ -88,6 +104,15 @@ impl MonitorState {
             Ok(new_b != target)
         } else {
             Ok(false)
+        }
+    }
+
+    /// Get a snapshot of the monitor status that can be serialized.
+    pub fn get_status(&self) -> MonitorStatus {
+        MonitorStatus {
+            display_name: self.display_name.clone(),
+            target_brightness: self.target,
+            brightness: self.brightness,
         }
     }
 }

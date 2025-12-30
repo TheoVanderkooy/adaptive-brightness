@@ -6,11 +6,14 @@ use std::{os::fd::FromRawFd, time};
 
 use anyhow::Context;
 use ddc::ConvertToAnyhow;
+use serde::{Deserialize, Serialize};
 use smol::io::{AsyncReadExt, AsyncWriteExt};
+use smol::net::unix::UnixStream;
 use smol::stream::StreamExt;
 use smol::{LocalExecutor, Timer, lock::Mutex, net::unix::UnixListener};
 use systemd::daemon::listen_fds;
 
+use crate::monitor::MonitorStatus;
 use crate::{
     args::Args, get_config, get_displays, init_ddcutil, match_displays_to_config,
     monitor::MonitorState, piecewise_linear::PiecewiseLinear, sensor::Sensor,
@@ -19,6 +22,23 @@ use crate::{
 pub(crate) struct DaemonState {
     pub lux: u32,
     pub monitors: Vec<MonitorState>,
+}
+
+/// A snapshot of the current status that can be serialized & shared with other clients.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct DaemonStatus {
+    pub lux: u32,
+    pub monitors: Vec<MonitorStatus>,
+}
+
+impl DaemonState {
+    pub fn get_status(&self) -> DaemonStatus {
+        let monitors = self.monitors.iter().map(|m| m.get_status()).collect();
+        DaemonStatus {
+            lux: self.lux,
+            monitors,
+        }
+    }
 }
 
 /// Main daemon process:
@@ -64,6 +84,64 @@ async fn main_daemon_loop(mut sensor: Sensor, state: &Mutex<DaemonState>) -> any
     }
 }
 
+async fn control_connection_handler_inner(
+    state: &Mutex<DaemonState>,
+    command: u8,
+    stream: &mut UnixStream,
+) -> anyhow::Result<()> {
+    match command {
+        // `s`: serializes and sends over the current daemon state
+        b's' => {
+            let status = { state.lock().await.get_status() };
+
+            let buf = serde_json::to_vec(&status).with_context(|| "error serializing status")?;
+
+            stream
+                .write_all(&buf)
+                .await
+                .with_context(|| "write error")?;
+        }
+        // TODO: `r`: restart the daemon
+        // TODO: other commands to e.g. reload config?
+        _ => {
+            anyhow::bail!("unknown command {command}");
+        }
+    }
+    Ok(())
+}
+
+async fn control_connection_handler(cid: u32, state: &Mutex<DaemonState>, mut stream: UnixStream) {
+    println!("[{cid}] new diagnostic connection");
+    let mut read_buf = [0];
+    loop {
+        match stream.read_exact(&mut read_buf).await {
+            Ok(_) => {
+                let command = read_buf[0];
+                if let Err(e) = control_connection_handler_inner(state, command, &mut stream).await
+                {
+                    println!("[{cid}] Error while handling command {command}: {e:?}");
+                    return;
+                }
+            }
+            Err(e) => {
+                // Differentiate expected (stream closed) vs unexpected errors & end the task
+                match e.kind() {
+                    // Client closed the the connection after reading everything we sent
+                    ErrorKind::UnexpectedEof
+                    // Client closed the connection after reading only part of what we sent
+                    | ErrorKind::ConnectionReset
+                    => {
+                        println!("[{cid}] Diagnostic connection closed")
+                    }
+                    // Anything else is unexpected
+                    _ => println!("[{cid}] Read error `{e:?}`, closing connection"),
+                };
+                return;
+            }
+        }
+    }
+}
+
 /// Control loop:
 /// Listens on the control socket and responds to external queries/commands
 async fn control_loop<'a, 'e>(
@@ -83,44 +161,9 @@ where
         println!("getting a new connection...");
         cid += 1;
 
-// TODO properly implement this :)
-
         match stream {
-            Ok(mut stream) => {
-                let t = exec.spawn(async move {
-                    println!("[{cid}] new diagnostic connection");
-                    let mut read_buf = [0];
-                    loop {
-                        match stream.read_exact(&mut read_buf).await {
-                            Ok(_) => {
-                                let lux = { state.lock().await.lux };
-                                let buf = lux.to_be_bytes();
-                                match stream.write_all(&buf).await {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        println!("[{cid}] Write error {e:?}");
-                                        return;
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                // Differentiate expected (stream closed) vs unexpected errors & end the task
-                                match e.kind() {
-                                    // Client closed the the connection after reading everything we sent
-                                    ErrorKind::UnexpectedEof
-                                    // Client closed the connection after reading only part of what we sent
-                                    | ErrorKind::ConnectionReset
-                                    => {
-                                        println!("[{cid}] Diagnostic connection closed")
-                                    }
-                                    // Anything else is unexpected
-                                    _ => println!("[{cid}] Read error `{e:?}`, closing connection"),
-                                };
-                                return;
-                            }
-                        }
-                    }
-                });
+            Ok(stream) => {
+                let t = exec.spawn(control_connection_handler(cid, state, stream));
                 t.detach();
             }
             Err(e) => println!("incoming connection error: {e:?}"),
@@ -201,10 +244,16 @@ pub(crate) fn daemon_main(args: &Args) -> anyhow::Result<()> {
                 let curve = PiecewiseLinear::from_steps(mc.curve.clone()).ok_or_else(|| {
                     anyhow::anyhow!("Invalid brightness curve for monitor {0:?}", mc.identifier)
                 })?;
-// TODO need to remember the name of the display
+
+                let display_name = format!(
+                    "{0} {1} {2}",
+                    d.manufacturer(),
+                    d.model(),
+                    d.serial_number()
+                );
                 let d = ddc::Display::from_display_info(d).anyhow()?;
 
-                Ok(MonitorState::for_display(d, curve))
+                Ok(MonitorState::for_display(d, display_name, curve))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
