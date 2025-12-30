@@ -36,6 +36,9 @@ pub(crate) enum Command {
     #[command(about = "Read current lux value.")]
     Read,
 
+    #[command(about = "Get current daemon status.")]
+    Status,
+
     #[command(
         about = "Check configuration file syntax and print out the settings that will be applied for each display device."
     )]

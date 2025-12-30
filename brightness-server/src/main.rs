@@ -109,9 +109,13 @@ fn main() -> anyhow::Result<()> {
         None => {
             // systemd uses $LISTEN_FDS to communicate how many sockets have been passed in
             // https://www.freedesktop.org/software/systemd/man/latest/systemd.socket.html
-            let lfds = listen_fds(false).with_context(|| "no socket path provided, and none passed by systemd")?;
+            let lfds = listen_fds(false)
+                .with_context(|| "no socket path provided, and none passed by systemd")?;
             if lfds.len() != 1 {
-                anyhow::bail!("unexpected number of sockets provided by systemd: {0:?}", lfds.len());
+                anyhow::bail!(
+                    "unexpected number of sockets provided by systemd: {0:?}",
+                    lfds.len()
+                );
             }
             unsafe { StdUnixListener::from_raw_fd(3) }.try_into()?
         }

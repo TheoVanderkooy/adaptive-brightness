@@ -24,12 +24,12 @@
   - [x] split out a binary just for reading & exposing brightness over a socket (to multiple consumers)
   - [x] move the main functionality to read from the socket
   - [x] separate CLI to read the current brightness?
-- [ ] make _brightness_ (not lux) observable.. abc daemon could publish that to a socket?
+- [ ] make _monitor brightness_ (not lux) observable.. abc daemon could publish that to a socket?
 - [ ] UI!
   - [ ] make the daemon expose stuff over a socket, similar to brightness daemon
     - [ ] more than single-byte "commands" -- can still be single threaded if client sends partial command?
     - [ ] also needs args for where to expose its socket, as well as brightness input socket
-  - [ ] expose lix, brightness, monitors, config, ...
+  - [ ] expose lux, brightness, monitors, config, ...
   - [ ] allow restarting daemon and/or reloading the config/redetecting monitors
   - [ ] editing config from the UI
   - [ ]

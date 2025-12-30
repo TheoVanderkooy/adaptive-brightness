@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::ops::Deref;
 use std::os::unix::net::UnixListener as StdUnixListener;
 use std::rc::Rc;
@@ -19,7 +20,6 @@ pub(crate) struct DaemonState {
     pub lux: u32,
     pub monitors: Vec<MonitorState>,
 }
-
 
 /// Main daemon process:
 /// periodically wakes up to update all monitors if the brightness has changed
@@ -71,41 +71,51 @@ async fn control_loop<'a, 'e>(
     exec: impl Deref<Target = LocalExecutor<'e>>,
     state: &'a Mutex<DaemonState>,
 ) -> anyhow::Result<()>
-  where 'a : 'e
+where
+    'a: 'e,
 {
     let mut incoming = listener.incoming();
     println!("control loop starting on {0:?}", listener.local_addr());
 
+    let mut cid = 0u32;
+
     while let Some(stream) = incoming.next().await {
         println!("getting a new connection...");
+        cid += 1;
 
 // TODO properly implement this :)
 
         match stream {
             Ok(mut stream) => {
                 let t = exec.spawn(async move {
-                    println!("new diagnostic connection");
+                    println!("[{cid}] new diagnostic connection");
                     let mut read_buf = [0];
                     loop {
                         match stream.read_exact(&mut read_buf).await {
                             Ok(_) => {
                                 let lux = { state.lock().await.lux };
-                                let mut buf = [0u8; 5];
-                                buf[4] = b'\n';
-                                buf[3] = b'0' + ((lux % 10) as u8);
-                                buf[2] = b'0' + (((lux / 10) % 10) as u8);
-                                buf[1] = b'0' + (((lux / 100) % 10) as u8);
-                                buf[0] = b'0' + (((lux / 1000) % 10) as u8);
+                                let buf = lux.to_be_bytes();
                                 match stream.write_all(&buf).await {
                                     Ok(_) => {}
                                     Err(e) => {
-                                        println!("Write error {e:?}");
+                                        println!("[{cid}] Write error {e:?}");
                                         return;
                                     }
                                 }
                             }
                             Err(e) => {
-                                println!("Read error {e:?}");
+                                // Differentiate expected (stream closed) vs unexpected errors & end the task
+                                match e.kind() {
+                                    // Client closed the the connection after reading everything we sent
+                                    ErrorKind::UnexpectedEof
+                                    // Client closed the connection after reading only part of what we sent
+                                    | ErrorKind::ConnectionReset
+                                    => {
+                                        println!("[{cid}] Diagnostic connection closed")
+                                    }
+                                    // Anything else is unexpected
+                                    _ => println!("[{cid}] Read error `{e:?}`, closing connection"),
+                                };
                                 return;
                             }
                         }

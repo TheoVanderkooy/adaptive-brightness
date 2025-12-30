@@ -19,7 +19,11 @@ use xdg_dirs::{dirs, xdg_user_dir};
 // STD
 use std::{
     fs::{self, File, OpenOptions},
-    io, thread,
+    io::{self, Read, Write},
+    os::unix::net::UnixStream,
+    path::PathBuf,
+    str::FromStr,
+    thread,
 };
 
 // 3rd party libraries
@@ -109,6 +113,8 @@ fn main() -> anyhow::Result<()> {
 
         Some(Command::Read) => read_brightness(&args),
 
+        Some(Command::Status) => read_status(&args),
+
         // Test config file: make sure it exists, can be read, and can be parsed
         Some(Command::Check) => {
             init_ddcutil()?;
@@ -151,6 +157,29 @@ fn read_brightness(args: &Args) -> anyhow::Result<()> {
     let lux = sensor.read_lux()? as i32;
 
     println!("{lux}");
+
+    Ok(())
+}
+
+/// Read status from the status socket & print it out
+fn read_status(args: &Args) -> anyhow::Result<()> {
+    // Connect to the status socket
+    let sock_path = match &args.control_socket_path {
+        Some(p) => p,
+        None => &PathBuf::from_str(DEFAULT_CONTROL_SOCK_PATH)?,
+    };
+
+    let mut stream = UnixStream::connect(sock_path)?;
+
+    // Send 's' to the socket to get the status
+    stream.write_all(&[b's'])?;
+
+    // Read & print response
+    let mut buf: [u8; 4] = [0; 4];
+    stream.read_exact(&mut buf)?;
+    let lux = i32::from_be_bytes(buf);
+
+    println!("Current lux: {lux}");
 
     Ok(())
 }
