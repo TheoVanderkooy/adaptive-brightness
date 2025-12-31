@@ -1,8 +1,8 @@
 /// Wrapper for a single monitor that handles updating its brightness and remembers its state.
 use crate::piecewise_linear::PiecewiseLinear;
 
+use common::MonitorStatus;
 use ddc::{self, ConvertToAnyhow};
-use serde::{Deserialize, Serialize};
 
 /// Internal state of monitors so we can update brightness appropriately.
 #[derive(Debug)]
@@ -15,14 +15,6 @@ pub struct MonitorState {
     // State
     target: u16,
     brightness: u16,
-}
-
-/// Serializable monitor status to be exposed to client apps monitoring the daemon state.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MonitorStatus {
-    pub display_name: String,
-    pub target_brightness: u16,
-    pub brightness: u16,
 }
 
 impl MonitorState {

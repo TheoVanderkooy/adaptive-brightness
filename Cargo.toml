@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "brightness-server",
+    "common",
     "control",
     "tsl2591",
     "ui"

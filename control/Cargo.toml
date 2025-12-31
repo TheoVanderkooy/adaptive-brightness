@@ -22,3 +22,4 @@ tsl2591 = { version = "0.1.0", path = "../tsl2591" }
 smol = "2.0.2"
 systemd = "0.10.1"
 serde_json = "1.0.148"
+common = { version = "0.1.0", path = "../common" }

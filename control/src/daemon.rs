@@ -5,15 +5,15 @@ use std::rc::Rc;
 use std::{os::fd::FromRawFd, time};
 
 use anyhow::Context;
+use common::DaemonStatus;
 use ddc::ConvertToAnyhow;
-use serde::{Deserialize, Serialize};
 use smol::io::{AsyncReadExt, AsyncWriteExt};
 use smol::net::unix::UnixStream;
 use smol::stream::StreamExt;
 use smol::{LocalExecutor, Timer, lock::Mutex, net::unix::UnixListener};
 use systemd::daemon::listen_fds;
 
-use crate::monitor::{DisplayInfoDisplayName, MonitorStatus};
+use crate::monitor::{DisplayInfoDisplayName};
 use crate::{
     args::Args, get_config, get_displays, init_ddcutil, match_displays_to_config,
     monitor::MonitorState, piecewise_linear::PiecewiseLinear, sensor::Sensor,
@@ -22,14 +22,6 @@ use crate::{
 pub(crate) struct DaemonState {
     pub lux: u32,
     pub monitors: Vec<MonitorState>,
-    pub unmanaged_monitors: Vec<String>,
-}
-
-/// A snapshot of the current status that can be serialized & shared with other clients.
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct DaemonStatus {
-    pub lux: u32,
-    pub monitors: Vec<MonitorStatus>,
     pub unmanaged_monitors: Vec<String>,
 }
 
@@ -106,6 +98,7 @@ async fn control_connection_handler_inner(
         }
         // TODO: `r`: restart the daemon
         // TODO: `p`: trigger panic?
+        // TODO: `w`: stream stuff over the connection
         // TODO: other commands to e.g. reload config?
         _ => {
             anyhow::bail!("unknown command {command}");

@@ -8,6 +8,7 @@ mod sensor;
 
 // in-crate imports
 use args::*;
+use common::{DEFAULT_BRIGHTNESS_SOCK_PATH, DEFAULT_CONTROL_SOCK_PATH, DaemonStatus};
 use config::*;
 use daemon::*;
 use sensor::*;
@@ -29,9 +30,6 @@ use std::{
 // 3rd party libraries
 use anyhow::Context;
 use clap::Parser;
-
-const DEFAULT_BRIGHTNESS_SOCK_PATH: &str = "/tmp/abc-brightness.sock";
-const DEFAULT_CONTROL_SOCK_PATH: &str = "/tmp/abc-control.sock";
 
 /// Load the configuration based on arguments.
 /// Uses the file supplied to the CLI, or in the default location if not specified, or the default config if there is no file.
