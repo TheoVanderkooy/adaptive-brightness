@@ -19,7 +19,7 @@ impl Metrics {
         let brightness = Gauge::default();
         registry.register_with_unit(
             "brightness",
-            "help",
+            "brightness (in lux) measured by the sensor on my desk",
             Unit::Other("lux".into()),
             brightness.clone(),
         );
