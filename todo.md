@@ -32,7 +32,7 @@
   - [ ] expose lux, brightness, monitors, config, ...
   - [ ] allow restarting daemon and/or reloading the config/redetecting monitors
   - [ ] editing config from the UI
-  - [ ]
+  - [x] export stats to some realtime DB (or just a file...) for analysis (prometheus ?)
 
 
 

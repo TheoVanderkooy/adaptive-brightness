@@ -85,6 +85,14 @@ pub(crate) struct Args {
     )]
     pub control_socket_path: Option<PathBuf>,
 
+    #[arg(
+        global = true,
+        short = 'm',
+        long = "metric-port",
+        help = "Port over which to publish metrics. If not specified, metrics won't be published."
+    )]
+    pub metric_port: Option<u16>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -122,6 +130,7 @@ mod tests {
                 command: None,
                 brightness_socket_path: None,
                 control_socket_path: None,
+                metric_port: None,
             },
             Args::try_parse_from(&["executable"]).unwrap()
         );
@@ -132,6 +141,7 @@ mod tests {
                 command: None,
                 brightness_socket_path: None,
                 control_socket_path: None,
+                metric_port: None,
             },
             Args::try_parse_from(&["executable", "--config", "/some/file"]).unwrap()
         );
@@ -142,6 +152,7 @@ mod tests {
                 command: Some(Command::Check),
                 brightness_socket_path: None,
                 control_socket_path: None,
+                metric_port: None,
             },
             Args::try_parse_from(&["executable", "check", "--config", "/some/file"]).unwrap()
         );
@@ -152,6 +163,7 @@ mod tests {
                 command: Some(Command::Daemon),
                 brightness_socket_path: Some(PathBuf::from("/some/socket")),
                 control_socket_path: Some(PathBuf::from("/some/other/socket")),
+                metric_port: Some(1234),
             },
             Args::try_parse_from(&[
                 "executable",
@@ -162,6 +174,8 @@ mod tests {
                 "/some/socket",
                 "-s",
                 "/some/other/socket",
+                "-m",
+                "1234"
             ])
             .unwrap()
         );

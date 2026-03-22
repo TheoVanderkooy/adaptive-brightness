@@ -116,7 +116,12 @@ pub trait DisplayInfoDisplayName {
 
 impl DisplayInfoDisplayName for ddc::DisplayInfo {
     fn display_name(&self) -> String {
-        format!("{0} {1} {2}", self.manufacturer(), self.model(), self.serial_number())
+        format!(
+            "{0} {1} {2}",
+            self.manufacturer(),
+            self.model(),
+            self.serial_number()
+        )
     }
 }
 

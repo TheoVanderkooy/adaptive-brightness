@@ -2,6 +2,7 @@
 mod args;
 mod config;
 mod daemon;
+mod metrics;
 mod monitor;
 mod piecewise_linear;
 mod sensor;
