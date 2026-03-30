@@ -64,7 +64,7 @@ async fn main_daemon_loop(mut sensor: Sensor, state: &Mutex<DaemonState>) -> any
 
     // Main loop: periodically wake up to update all monitors
     loop {
-        let mut updated = false;
+        let mut may_need_update = false;
         let lux;
         {
             let ret = sensor.read_lux_async().await;
@@ -84,18 +84,14 @@ async fn main_daemon_loop(mut sensor: Sensor, state: &Mutex<DaemonState>) -> any
             let metrics = &s.metrics;
 
             for m in monitors {
-                let did_update = m.update_brightness(lux)?;
+                may_need_update = may_need_update || m.update_brightness(lux)?;
 
-                if did_update {
-                    updated = true;
-
-                    let ms = m.get_status();
-                    metrics.set_monitor_brightness(ms.display_name, ms.brightness);
-                }
+                let ms = m.get_status();
+                metrics.set_monitor_brightness(ms.display_name, ms.brightness);
             }
         }
 
-        if updated {
+        if may_need_update {
             iters_since_last_update = 0;
         } else {
             iters_since_last_update += 1;
@@ -106,7 +102,7 @@ async fn main_daemon_loop(mut sensor: Sensor, state: &Mutex<DaemonState>) -> any
         }
 
         // Don't sleep as long if we may be off-target
-        Timer::after(time::Duration::from_millis(if updated {
+        Timer::after(time::Duration::from_millis(if may_need_update {
             100
         } else {
             5_000
