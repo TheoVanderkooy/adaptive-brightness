@@ -79,8 +79,19 @@ async fn main_daemon_loop(mut sensor: Sensor, state: &Mutex<DaemonState>) -> any
             let mut s = state.lock().await;
             s.set_lux(lux);
 
-            for m in &mut s.monitors {
-                updated = updated || m.update_brightness(lux)?;
+            let s = &mut *s;
+            let monitors = &mut s.monitors;
+            let metrics = &s.metrics;
+
+            for m in monitors {
+                let did_update = m.update_brightness(lux)?;
+
+                if did_update {
+                    updated = true;
+
+                    let ms = m.get_status();
+                    metrics.set_monitor_brightness(ms.display_name, ms.brightness);
+                }
             }
         }
 
@@ -344,6 +355,10 @@ pub(crate) fn daemon_main(args: &Args) -> anyhow::Result<()> {
         s.metrics.brightness.set(s.lux);
         for m in &mut s.monitors {
             m.set_brightness_for_lux(s.lux)?;
+
+            let ms = m.get_status();
+            s.metrics
+                .set_monitor_brightness(ms.display_name, ms.brightness);
         }
 
         let state = Arc::new(state);
