@@ -32,6 +32,8 @@ use std::{
 use anyhow::Context;
 use clap::Parser;
 
+use crate::monitor::DisplayInfoDisplayName;
+
 /// Load the configuration based on arguments.
 /// Uses the file supplied to the CLI, or in the default location if not specified, or the default config if there is no file.
 fn get_config(args: &Args) -> anyhow::Result<Config> {
@@ -129,6 +131,11 @@ fn main() -> anyhow::Result<()> {
         // Periodically poll brightness and write it to a file
         Some(Command::CollectBrightness(ref collect_args)) => {
             collect_brightness(&args, &collect_args)
+        }
+
+        Some(Command::SetBrightness(ref set_args)) => {
+            init_ddcutil()?;
+            set_brightness(&args, &set_args)
         }
 
         // testing
@@ -309,6 +316,23 @@ fn collect_brightness(args: &Args, collect_args: &CollectBrightnessArgs) -> anyh
 
         thread::sleep(collect_args.period);
     }
+}
+
+fn set_brightness(_args: &Args, set_args: &SetBrightnessArgs) -> anyhow::Result<()> {
+    let displays: ddc::DisplayInfoList = get_displays()?;
+
+    for d in displays.as_slice() {
+        let disp_name = d.display_name();
+        println!("attempting to set brightness for {disp_name} ...");
+        if let Err(e) = ddc::Display::from_display_info(d)
+            .anyhow()
+            .and_then(|d: ddc::Display| d.set_vcp_value(0x10, set_args.brightness).anyhow())
+        {
+            println!("Error setting prightness for {disp_name}:  {e}");
+        }
+    }
+
+    Ok(())
 }
 
 // TODO remove this once no longer needed

@@ -17,6 +17,8 @@ pub struct TSL2591<I: I2c> {
 
 const I2C_ADDR: SevenBitAddress = 0x29;
 
+const ENABLE_POWERON_BIT: u8 = 0x01;
+const ENABLE_AEN_BIT: u8 = 0x02;
 const COMMAND_BIT: u8 = 0xA0;
 
 #[allow(unused)]
@@ -91,6 +93,19 @@ impl<I: I2c> TSL2591<I> {
         i2c.write_read(I2C_ADDR, &[COMMAND_BIT | register], &mut buf)
             .map_err(|e| anyhow::anyhow!("I2C read failed! register={register:#x}, error={e:?}"))?;
         Ok(buf[0])
+    }
+
+    fn write_to_i2c(i2c: &mut I, register: u8, val: u8) -> Result<(), anyhow::Error> {
+        i2c.write(register, &[val])
+            .map_err(|e| anyhow::anyhow!("I2C write failed! register={register:#x}, error={e:?}"))
+    }
+
+    pub fn enable(&mut self) -> Result<(), anyhow::Error> {
+        Self::write_to_i2c(
+            &mut self.i2c,
+            register::ENABLE,
+            ENABLE_POWERON_BIT | ENABLE_AEN_BIT,
+        )
     }
 
     #[allow(dead_code)]

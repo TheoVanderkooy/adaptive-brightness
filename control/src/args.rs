@@ -8,7 +8,7 @@ use xdg_dirs::{dirs, xdg_location_of};
 use crate::config::CONFIG_PATH;
 
 #[derive(Debug, PartialEq, clap::Args)]
-#[command(flatten_help = true, about = "Collect brightness data to ")]
+#[command(flatten_help = true, about = "Collect brightness data to a file")]
 pub(crate) struct CollectBrightnessArgs {
     #[arg(
         short,
@@ -24,6 +24,13 @@ pub(crate) struct CollectBrightnessArgs {
         default_value = "5m",
     )]
     pub period: time::Duration,
+}
+
+#[derive(Debug, PartialEq, clap::Args)]
+#[command(about = "Set monitor brightness directly. Sets all monitors.")]
+pub(crate) struct SetBrightnessArgs {
+    #[arg(help = "Brightness percentage to set")]
+    pub brightness: u16,
 }
 
 #[derive(Debug, Subcommand, PartialEq)]
@@ -48,6 +55,9 @@ pub(crate) enum Command {
     GenConfig,
 
     CollectBrightness(CollectBrightnessArgs),
+
+    #[command(about = "Set brightness directly")]
+    SetBrightness(SetBrightnessArgs),
 
     // TODO remove
     #[command(about = "for testing")]
