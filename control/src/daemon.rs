@@ -281,25 +281,28 @@ pub(crate) fn daemon_main(args: &Args) -> anyhow::Result<()> {
         let config_mapping = match_displays_to_config(&displays, &config)?;
 
         println!("Detected displays:");
-        for (d, conf) in &config_mapping {
+        for (d, conf, is_disabled) in &config_mapping {
             print!(
                 "    {0:<3}  {1:<13}  {2:<13}: ",
                 d.manufacturer(),
                 d.model(),
                 d.serial_number()
             );
-            match conf {
-                None => println!("no matching config"),
-                Some(mc) => println!("curve={0:?}", mc.curve),
+            match (conf, is_disabled) {
+                (None, false) => println!("no matching config"),
+                (None, true) => println!("disabled"),
+                (Some(mc), _) => println!("curve={0:?}", mc.curve),
             }
         }
 
         // Construct internal state for each device
         let monitors: Vec<MonitorState> = config_mapping
             .iter()
-            .filter_map(|&(ref d, mc)| {
+            .filter_map(|&(ref d, mc, is_disabled)| {
                 // filter out monitors that don't match any config
-                if let Some(mc) = mc {
+                if let Some(mc) = mc
+                    && !is_disabled
+                {
                     Some((*d, mc))
                 } else {
                     None
@@ -321,8 +324,8 @@ pub(crate) fn daemon_main(args: &Args) -> anyhow::Result<()> {
         // Remember monitors we're not doing anything with, just for displaying via UI
         let unmanaged_monitors = config_mapping
             .iter()
-            .filter_map(|&(ref d, mc)| {
-                if let None = mc {
+            .filter_map(|&(ref d, mc, is_disabled)| {
+                if mc.is_none() || is_disabled {
                     Some(d.display_name())
                 } else {
                     None

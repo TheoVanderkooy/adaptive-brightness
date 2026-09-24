@@ -38,24 +38,33 @@ pub struct MonitorConfig {
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Config {
     pub monitors: Vec<MonitorConfig>,
+    pub disabled_monitors: Option<Vec<MonitorId>>,
     // TODO: could configure brightness sensor (different intermediate chips (vid,pid), maybe implement different sensors)
 }
 
 impl Config {
     fn validate_and_normalize(mut self) -> Result<Self, anyhow::Error> {
-        // Sort by priority. Sorting is stable, so position is the tie-breaker if multiple categories apply
-        self.monitors.sort_by_key(|m| match m.identifier {
+        let sort_key = |m: &MonitorId| match m {
             MonitorId::I2cBus(_) => 0,
             MonitorId::ModelSerial(_, _, _) => 10,
             MonitorId::Serial(_) => 11,
             MonitorId::Model(_, _) => 20,
             MonitorId::Default => 100,
-        });
+        };
+
+        // Sort by priority. Sorting is stable, so position is the tie-breaker if multiple categories apply
+        self.monitors.sort_by_key(|m| sort_key(&m.identifier));
+
+        if let Some(ref mut dm) = self.disabled_monitors {
+            dm.sort_by_key(sort_key)
+        }
 
         // TODO validation?
         // - only one default
         // - in general no duplicates
         // - validate curves?
+        // - no duplicates between the two lists
+        // - default can't be in disabled?
 
         Ok(self)
     }
@@ -98,6 +107,23 @@ mod test {
         )
     "#;
 
+    const TEST_CONFIG_2: &str = r#"
+        (
+        monitors: [
+            (
+                identifier: Default,
+                curve: [
+                    (0, 10),
+                    (250, 100),
+                ],
+            ),
+        ],
+        disabled_monitors: [
+            Serial("12345"),
+        ],
+        )
+    "#;
+
     #[test]
     fn test_deserialize_config() {
         let parsed: Config = ron::from_str(TEST_CONFIG).unwrap();
@@ -114,8 +140,21 @@ mod test {
                         identifier: MonitorId::I2cBus(6),
                         curve: vec![(0, 50)],
                     },
-                ]
+                ],
+                disabled_monitors: None,
             }
         );
+
+        let parsed: Config = Config::from_str(TEST_CONFIG_2).unwrap();
+        assert_eq!(
+            parsed,
+            Config {
+                monitors: vec![MonitorConfig {
+                    identifier: MonitorId::Default,
+                    curve: vec![(0, 10), (250, 100)],
+                },],
+                disabled_monitors: Some(vec![MonitorId::Serial("12345".to_string())]),
+            }
+        )
     }
 }

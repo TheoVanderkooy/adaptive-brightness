@@ -58,35 +58,49 @@ fn get_displays() -> anyhow::Result<ddc::DisplayInfoList> {
 }
 
 /// Match up display configuration to the detected displays.
+/// Returns a list of (display, matching config ?, is explicitly disabled)
 fn match_displays_to_config<'d, 'c>(
     displays: &'d ddc::DisplayInfoList,
     config: &'c Config,
-) -> anyhow::Result<Vec<(&'d ddc::DisplayInfo, Option<&'c MonitorConfig>)>> {
+) -> anyhow::Result<Vec<(&'d ddc::DisplayInfo, Option<&'c MonitorConfig>, bool)>> {
+    let display_matches_monitor = |m: &MonitorId, d: &ddc::DisplayInfo| {
+        match m {
+            // default always applies
+            MonitorId::Default => true,
+
+            // compare physical path of the display
+            MonitorId::I2cBus(busno) => d.path() == ddc::DisplayPath::I2C { bus: *busno as i32 },
+
+            // compare identifiers of the display
+            MonitorId::Model(manufacturer, model) => {
+                d.manufacturer() == manufacturer && d.model() == model
+            }
+            MonitorId::ModelSerial(manufacturer, model, serial) => {
+                d.manufacturer() == manufacturer
+                    && d.model() == model
+                    && d.serial_number() == serial
+            }
+            MonitorId::Serial(serial) => d.serial_number() == serial,
+        }
+    };
+
     let ret = displays
         .into_iter()
         .map(|d| {
-            let matching = config.monitors.iter().find(|&m| match &m.identifier {
-                // default always applies
-                MonitorId::Default => true,
+            if let Some(ref dm) = config.disabled_monitors
+                && dm
+                    .iter()
+                    .find(|&m| display_matches_monitor(&m, &d))
+                    .is_some()
+            {
+                return (d, None, true);
+            }
 
-                // compare physical path of the display
-                MonitorId::I2cBus(busno) => {
-                    d.path() == ddc::DisplayPath::I2C { bus: *busno as i32 }
-                }
-
-                // compare identifiers of the display
-                MonitorId::Model(manufacturer, model) => {
-                    d.manufacturer() == manufacturer && d.model() == model
-                }
-                MonitorId::ModelSerial(manufacturer, model, serial) => {
-                    d.manufacturer() == manufacturer
-                        && d.model() == model
-                        && d.serial_number() == serial
-                }
-                MonitorId::Serial(serial) => d.serial_number() == serial,
-            });
-
-            (d, matching)
+            let matching = config
+                .monitors
+                .iter()
+                .find(|&m| display_matches_monitor(&m.identifier, &d));
+            (d, matching, false)
         })
         .collect();
 
@@ -223,7 +237,7 @@ fn check_config(args: &Args) -> anyhow::Result<()> {
     let displays = get_displays()?;
     let config_mapping = match_displays_to_config(&displays, &config)?;
 
-    for (display, conf) in config_mapping {
+    for (display, conf, is_disabled) in config_mapping {
         println!(
             "Display {0}: {1} {2} {3}",
             display.display_no(),
@@ -231,9 +245,10 @@ fn check_config(args: &Args) -> anyhow::Result<()> {
             display.model(),
             display.serial_number()
         );
-        match conf {
-            None => println!("  No matching configuration!"),
-            Some(conf) => println!("  Matched: {0:?}", conf),
+        match (conf, is_disabled) {
+            (None, false) => println!("  No matching configuration!"),
+            (None, true) => println!("  Explicitly disabled"),
+            (Some(conf), _) => println!("  Matched: {0:?}", conf),
         }
     }
 
@@ -276,7 +291,10 @@ fn gen_config_file(args: &Args) -> anyhow::Result<()> {
             curve: vec![(0, 10), (250, 100)],
         })
         .collect::<Vec<_>>();
-    let conf = Config { monitors: monitors };
+    let conf = Config {
+        monitors: monitors,
+        disabled_monitors: None,
+    };
 
     // Create the new file and write the default contents
     let file = File::create_new(&path)
