@@ -35,11 +35,18 @@ pub struct MonitorConfig {
     pub curve: Vec<(u32, u32)>,
 }
 
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Copy)]
+#[allow(non_camel_case_types)]
+pub enum SensorType {
+    FTDI_TSL2591,
+    // TODO: other sensors
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Config {
     pub monitors: Vec<MonitorConfig>,
     pub disabled_monitors: Option<Vec<MonitorId>>,
-    // TODO: could configure brightness sensor (different intermediate chips (vid,pid), maybe implement different sensors)
+    pub physical_sensor: SensorType,
 }
 
 impl Config {
@@ -103,7 +110,8 @@ mod test {
                     (0, 50),
                 ],
             ),
-        ]
+        ],
+        physical_sensor: FTDI_TSL2591,
         )
     "#;
 
@@ -121,6 +129,7 @@ mod test {
         disabled_monitors: [
             Serial("12345"),
         ],
+        physical_sensor: FTDI_TSL2591,
         )
     "#;
 
@@ -142,6 +151,7 @@ mod test {
                     },
                 ],
                 disabled_monitors: None,
+                physical_sensor: SensorType::FTDI_TSL2591,
             }
         );
 
@@ -154,6 +164,7 @@ mod test {
                     curve: vec![(0, 10), (250, 100)],
                 },],
                 disabled_monitors: Some(vec![MonitorId::Serial("12345".to_string())]),
+                physical_sensor: SensorType::FTDI_TSL2591,
             }
         )
     }

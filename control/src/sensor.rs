@@ -13,11 +13,18 @@ use tsl2591::TSL2591;
 
 use ftdi_embedded_hal as hal;
 
+use crate::config::{self};
+
 /// Abstracted lux sensor
 pub(crate) enum Sensor {
     Socket(UnixStream),
     AsyncSocket(AsyncUnixStream),
     Tsl2591(TSL2591<ftdi_embedded_hal::I2c<ftdi::Device>>),
+}
+
+pub enum SensorType<'a, T: AsRef<Path>> {
+    Open(config::SensorType),
+    Socket { socket_path: &'a T },
 }
 
 impl Sensor {
@@ -36,19 +43,21 @@ impl Sensor {
 
     /// If specified, open the given socket to read brightness values.
     /// If unspecified, open the physical sensor directly.
-    pub fn open<T: AsRef<Path>>(socket_path: &Option<T>) -> anyhow::Result<Self> {
-        match socket_path {
-            None => Self::open_tsl2591(),
-            Some(socket_path) => Ok(Self::Socket(UnixStream::connect(socket_path)?)),
+    pub fn open<T: AsRef<Path>>(sensor: SensorType<T>) -> anyhow::Result<Self> {
+        match sensor {
+            SensorType::Open(config::SensorType::FTDI_TSL2591) => Self::open_tsl2591(),
+            SensorType::Socket { socket_path } => {
+                Ok(Self::Socket(UnixStream::connect(socket_path)?))
+            }
         }
     }
 
     /// If specified, open the given socket to read brightness values.
     /// If unspecified, open the physical sensor directly.
-    pub fn open_async<T: AsRef<Path>>(socket_path: &Option<T>) -> anyhow::Result<Self> {
-        match socket_path {
-            None => Self::open_tsl2591(),
-            Some(socket_path) => Ok(Self::AsyncSocket(smol::block_on(
+    pub fn open_async<T: AsRef<Path>>(sensor: SensorType<T>) -> anyhow::Result<Self> {
+        match sensor {
+            SensorType::Open(config::SensorType::FTDI_TSL2591) => Self::open_tsl2591(),
+            SensorType::Socket { socket_path } => Ok(Self::AsyncSocket(smol::block_on(
                 AsyncUnixStream::connect(socket_path),
             )?)),
         }

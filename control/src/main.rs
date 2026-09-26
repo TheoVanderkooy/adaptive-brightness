@@ -52,6 +52,29 @@ fn get_config(args: &Args) -> anyhow::Result<Config> {
     }
 }
 
+/// Get the sensor type based on args and/or config file
+fn get_sensor_type<'a>(args: &'a Args) -> anyhow::Result<sensor::SensorType<'a, PathBuf>> {
+    args.brightness_socket_path
+        .as_ref()
+        .map(|p| sensor::SensorType::Socket { socket_path: p })
+        .or_else(|| {
+            let config = get_config(&args);
+            if let Err(e) = config {
+                println!("Failed to load config file: {e}");
+                None
+            } else {
+                config
+                    .ok()
+                    .map(|c| sensor::SensorType::Open(c.physical_sensor))
+            }
+        })
+        .with_context(|| {
+            format!(
+                "no daemon socket specified, and failed to load config to read the sensor directly"
+            )
+        })
+}
+
 /// Get list of displays from the DDC library, and wrapp the error because they aren't sync so anyhow doesn't like them.
 fn get_displays() -> anyhow::Result<ddc::DisplayInfoList> {
     ddc::get_display_info_list(false).anyhow()
@@ -159,15 +182,16 @@ fn main() -> anyhow::Result<()> {
 
 /// Simply read and print out the current brightness
 fn read_brightness(args: &Args) -> anyhow::Result<()> {
-    let sock_path = &args.brightness_socket_path;
-
-    let sensor = Sensor::open(sock_path);
+    let sensor_type = get_sensor_type(args)?;
+    let sensor = Sensor::open(sensor_type);
     let mut sensor = if let Err(e) = &sensor
-        && sock_path.is_none()
+        && args.brightness_socket_path.is_none()
     {
         println!("Couldn't open sensor ({e}), trying default socket path...");
         // if no path specified, and loading the device fails, check for default system socket
-        Sensor::open(&Some(DEFAULT_BRIGHTNESS_SOCK_PATH))?
+        Sensor::open(sensor::SensorType::Socket {
+            socket_path: &DEFAULT_BRIGHTNESS_SOCK_PATH,
+        })?
     } else {
         sensor?
     };
@@ -293,7 +317,8 @@ fn gen_config_file(args: &Args) -> anyhow::Result<()> {
         .collect::<Vec<_>>();
     let conf = Config {
         monitors: monitors,
-        disabled_monitors: None,
+        disabled_monitors: Some(vec![]),
+        physical_sensor: config::SensorType::FTDI_TSL2591,
     };
 
     // Create the new file and write the default contents
@@ -310,7 +335,8 @@ fn gen_config_file(args: &Args) -> anyhow::Result<()> {
 fn collect_brightness(args: &Args, collect_args: &CollectBrightnessArgs) -> anyhow::Result<()> {
     let to_file = collect_args.out_path.is_some();
 
-    let mut sensor = Sensor::open(&args.brightness_socket_path)?;
+    let sensor_type = get_sensor_type(args)?;
+    let mut sensor = Sensor::open(sensor_type)?;
 
     let mut writer: csv::Writer<Box<dyn io::Write>> = csv::WriterBuilder::new()
         .has_headers(false)

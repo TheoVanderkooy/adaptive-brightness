@@ -23,6 +23,7 @@ use systemd::daemon::listen_fds;
 
 use crate::metrics::Metrics;
 use crate::monitor::DisplayInfoDisplayName;
+use crate::sensor::SensorType;
 use crate::{
     args::Args, get_config, get_displays, init_ddcutil, match_displays_to_config,
     monitor::MonitorState, piecewise_linear::PiecewiseLinear, sensor::Sensor,
@@ -279,6 +280,7 @@ pub(crate) fn daemon_main(args: &Args) -> anyhow::Result<()> {
         // Detect displays and match them up with configuration settings
         let displays = get_displays()?;
         let config_mapping = match_displays_to_config(&displays, &config)?;
+        let sensor_type = config.physical_sensor;
 
         println!("Detected displays:");
         for (d, conf, is_disabled) in &config_mapping {
@@ -340,7 +342,12 @@ pub(crate) fn daemon_main(args: &Args) -> anyhow::Result<()> {
         // TODO consider "required" monitors
 
         // Connect to the brightness sensor
-        let mut sensor = Sensor::open_async(&args.brightness_socket_path)?;
+        let mut sensor = Sensor::open_async(
+            args.brightness_socket_path
+                .as_ref()
+                .map(|p| SensorType::Socket { socket_path: p })
+                .unwrap_or(SensorType::Open(sensor_type)),
+        )?;
 
         let mut state = Mutex::new(DaemonState {
             lux: sensor.read_lux()? as u32,
