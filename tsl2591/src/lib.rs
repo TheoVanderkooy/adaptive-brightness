@@ -81,6 +81,8 @@ impl<I: I2c> TSL2591<I> {
 
         // TODO it might make more sense to _write_ the configuration (& turn it on) instead
 
+        // Self::write_to_i2c(&mut i2c, register::CONFIG, 0b0001_0000)?;
+
         Ok(TSL2591 {
             i2c: i2c,
             gain: gain,
@@ -150,6 +152,21 @@ impl<I: I2c> TSL2591<I> {
     pub fn read_lux(&mut self) -> Result<f64, anyhow::Error> {
         let (ch0, ch1) = self.read_brightness()?;
         Ok(self.calculate_lux(ch0, ch1))
+    }
+
+    pub fn debug_print(&self) {
+        let gain = self.gain;
+        let atime = self.atime;
+        println!("gain={gain}, atime={atime}");
+    }
+
+    pub fn debug_read_all(&mut self) {
+        for i in 0u8..0x20 {
+            let res = self.read8(i);
+            if let Ok(res) = res {
+                println!("read8({i:x}): {res}   {res:x}");
+            }
+        }
     }
 }
 

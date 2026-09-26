@@ -357,5 +357,24 @@ fn set_brightness(_args: &Args, set_args: &SetBrightnessArgs) -> anyhow::Result<
 fn test(_args: &Args) -> anyhow::Result<()> {
     // ...
 
+    use tsl2591::TSL2591;
+
+    use ftdi_embedded_hal as hal;
+    let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
+        .interface(ftdi::Interface::Any)
+        .open()?;
+    let i2c = hal::FtHal::init_default(device)?.i2c()?;
+    let mut sensor = TSL2591::from_i2c(i2c)?;
+
+    // sensor.enable()?;
+
+    let brightness = sensor.read_brightness()?;
+
+    println!("brightness = {brightness:?}");
+    sensor.debug_print();
+
+    sensor.debug_read_all();
+
+
     Ok(())
 }
