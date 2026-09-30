@@ -38,7 +38,7 @@ pub struct MonitorConfig {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Copy)]
 #[allow(non_camel_case_types)]
 pub enum SensorType {
-    FTDI_TSL2591,
+    FT232H_TSL2591,
     // TODO: other sensors
 }
 
@@ -111,7 +111,7 @@ mod test {
                 ],
             ),
         ],
-        physical_sensor: FTDI_TSL2591,
+        physical_sensor: FT232H_TSL2591,
         )
     "#;
 
@@ -129,7 +129,7 @@ mod test {
         disabled_monitors: [
             Serial("12345"),
         ],
-        physical_sensor: FTDI_TSL2591,
+        physical_sensor: FT232H_TSL2591,
         )
     "#;
 
@@ -151,7 +151,7 @@ mod test {
                     },
                 ],
                 disabled_monitors: None,
-                physical_sensor: SensorType::FTDI_TSL2591,
+                physical_sensor: SensorType::FT232H_TSL2591,
             }
         );
 
@@ -164,7 +164,7 @@ mod test {
                     curve: vec![(0, 10), (250, 100)],
                 },],
                 disabled_monitors: Some(vec![MonitorId::Serial("12345".to_string())]),
-                physical_sensor: SensorType::FTDI_TSL2591,
+                physical_sensor: SensorType::FT232H_TSL2591,
             }
         )
     }

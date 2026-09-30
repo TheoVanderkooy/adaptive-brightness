@@ -80,33 +80,32 @@ fn get_displays() -> anyhow::Result<ddc::DisplayInfoList> {
     ddc::get_display_info_list(false).anyhow()
 }
 
+/// Whether the given monitor ID matches the given display info
+fn display_matches_monitor(m: &MonitorId, d: &ddc::DisplayInfo) -> bool {
+    match m {
+        // default always applies
+        MonitorId::Default => true,
+
+        // compare physical path of the display
+        MonitorId::I2cBus(busno) => d.path() == ddc::DisplayPath::I2C { bus: *busno as i32 },
+
+        // compare identifiers of the display
+        MonitorId::Model(manufacturer, model) => {
+            d.manufacturer() == manufacturer && d.model() == model
+        }
+        MonitorId::ModelSerial(manufacturer, model, serial) => {
+            d.manufacturer() == manufacturer && d.model() == model && d.serial_number() == serial
+        }
+        MonitorId::Serial(serial) => d.serial_number() == serial,
+    }
+}
+
 /// Match up display configuration to the detected displays.
 /// Returns a list of (display, matching config ?, is explicitly disabled)
 fn match_displays_to_config<'d, 'c>(
     displays: &'d ddc::DisplayInfoList,
     config: &'c Config,
 ) -> anyhow::Result<Vec<(&'d ddc::DisplayInfo, Option<&'c MonitorConfig>, bool)>> {
-    let display_matches_monitor = |m: &MonitorId, d: &ddc::DisplayInfo| {
-        match m {
-            // default always applies
-            MonitorId::Default => true,
-
-            // compare physical path of the display
-            MonitorId::I2cBus(busno) => d.path() == ddc::DisplayPath::I2C { bus: *busno as i32 },
-
-            // compare identifiers of the display
-            MonitorId::Model(manufacturer, model) => {
-                d.manufacturer() == manufacturer && d.model() == model
-            }
-            MonitorId::ModelSerial(manufacturer, model, serial) => {
-                d.manufacturer() == manufacturer
-                    && d.model() == model
-                    && d.serial_number() == serial
-            }
-            MonitorId::Serial(serial) => d.serial_number() == serial,
-        }
-    };
-
     let ret = displays
         .into_iter()
         .map(|d| {
@@ -318,7 +317,7 @@ fn gen_config_file(args: &Args) -> anyhow::Result<()> {
     let conf = Config {
         monitors: monitors,
         disabled_monitors: Some(vec![]),
-        physical_sensor: config::SensorType::FTDI_TSL2591,
+        physical_sensor: config::SensorType::FT232H_TSL2591,
     };
 
     // Create the new file and write the default contents
@@ -362,11 +361,25 @@ fn collect_brightness(args: &Args, collect_args: &CollectBrightnessArgs) -> anyh
     }
 }
 
-fn set_brightness(_args: &Args, set_args: &SetBrightnessArgs) -> anyhow::Result<()> {
+fn set_brightness(args: &Args, set_args: &SetBrightnessArgs) -> anyhow::Result<()> {
     let displays: ddc::DisplayInfoList = get_displays()?;
+
+    let disabled_monitors = get_config(&args).ok().and_then(|c| c.disabled_monitors);
 
     for d in displays.as_slice() {
         let disp_name = d.display_name();
+
+        let matching_monitor_id = disabled_monitors
+            .as_deref()
+            .iter()
+            .flat_map(|v| v.iter())
+            .find(|m| display_matches_monitor(m, d));
+
+        if matching_monitor_id.is_some() {
+            println!("display {disp_name} disabled in config, skipping...");
+            continue;
+        }
+
         println!("attempting to set brightness for {disp_name} ...");
         if let Err(e) = ddc::Display::from_display_info(d)
             .anyhow()

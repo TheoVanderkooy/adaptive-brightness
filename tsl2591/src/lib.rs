@@ -79,15 +79,16 @@ impl<I: I2c> TSL2591<I> {
             val => anyhow::bail!("unexpected integration time value {val}"),
         };
 
-        // TODO it might make more sense to _write_ the configuration (& turn it on) instead
-
-        // Self::write_to_i2c(&mut i2c, register::CONFIG, 0b0001_0000)?;
-
-        Ok(TSL2591 {
+        let mut ret =  TSL2591 {
             i2c: i2c,
             gain: gain,
             atime: atime,
-        })
+        };
+
+        ret.enable()?;
+        // TODO we should _write_ config here (or at least provide a way to update coinfig, for this project I don't need that yet)
+
+        Ok(ret)
     }
 
     fn read8_from_i2c(i2c: &mut I, register: u8) -> Result<u8, anyhow::Error> {
@@ -98,7 +99,7 @@ impl<I: I2c> TSL2591<I> {
     }
 
     fn write_to_i2c(i2c: &mut I, register: u8, val: u8) -> Result<(), anyhow::Error> {
-        i2c.write(register, &[val])
+        i2c.write(I2C_ADDR, &[COMMAND_BIT | register, val])
             .map_err(|e| anyhow::anyhow!("I2C write failed! register={register:#x}, error={e:?}"))
     }
 
@@ -160,8 +161,8 @@ impl<I: I2c> TSL2591<I> {
         println!("gain={gain}, atime={atime}");
     }
 
-    pub fn debug_read_all(&mut self) {
-        for i in 0u8..0x20 {
+    pub fn debug_read_all(&mut self, registers: impl Iterator<Item=u8>) {
+        for i in registers {
             let res = self.read8(i);
             if let Ok(res) = res {
                 println!("read8({i:x}): {res}   {res:x}");

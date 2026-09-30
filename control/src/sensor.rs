@@ -45,7 +45,7 @@ impl Sensor {
     /// If unspecified, open the physical sensor directly.
     pub fn open<T: AsRef<Path>>(sensor: SensorType<T>) -> anyhow::Result<Self> {
         match sensor {
-            SensorType::Open(config::SensorType::FTDI_TSL2591) => Self::open_tsl2591(),
+            SensorType::Open(config::SensorType::FT232H_TSL2591) => Self::open_tsl2591(),
             SensorType::Socket { socket_path } => {
                 Ok(Self::Socket(UnixStream::connect(socket_path)?))
             }
@@ -56,7 +56,7 @@ impl Sensor {
     /// If unspecified, open the physical sensor directly.
     pub fn open_async<T: AsRef<Path>>(sensor: SensorType<T>) -> anyhow::Result<Self> {
         match sensor {
-            SensorType::Open(config::SensorType::FTDI_TSL2591) => Self::open_tsl2591(),
+            SensorType::Open(config::SensorType::FT232H_TSL2591) => Self::open_tsl2591(),
             SensorType::Socket { socket_path } => Ok(Self::AsyncSocket(smol::block_on(
                 AsyncUnixStream::connect(socket_path),
             )?)),
