@@ -79,7 +79,7 @@ impl<I: I2c> TSL2591<I> {
             val => anyhow::bail!("unexpected integration time value {val}"),
         };
 
-        let mut ret =  TSL2591 {
+        let mut ret = TSL2591 {
             i2c: i2c,
             gain: gain,
             atime: atime,
@@ -161,7 +161,7 @@ impl<I: I2c> TSL2591<I> {
         println!("gain={gain}, atime={atime}");
     }
 
-    pub fn debug_read_all(&mut self, registers: impl Iterator<Item=u8>) {
+    pub fn debug_read_all(&mut self, registers: impl Iterator<Item = u8>) {
         for i in registers {
             let res = self.read8(i);
             if let Ok(res) = res {

@@ -39,7 +39,7 @@ pub struct MonitorConfig {
 #[allow(non_camel_case_types)]
 pub enum SensorType {
     FT232H_TSL2591,
-    // TODO: other sensors
+    FT232H_LTR390,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -129,7 +129,7 @@ mod test {
         disabled_monitors: [
             Serial("12345"),
         ],
-        physical_sensor: FT232H_TSL2591,
+        physical_sensor: FT232H_LTR390,
         )
     "#;
 
@@ -164,7 +164,7 @@ mod test {
                     curve: vec![(0, 10), (250, 100)],
                 },],
                 disabled_monitors: Some(vec![MonitorId::Serial("12345".to_string())]),
-                physical_sensor: SensorType::FT232H_TSL2591,
+                physical_sensor: SensorType::FT232H_LTR390,
             }
         )
     }

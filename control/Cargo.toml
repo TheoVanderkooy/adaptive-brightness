@@ -26,3 +26,4 @@ common = { version = "0.1.0", path = "../common" }
 smol-axum = "0.2.1"
 axum = "0.8.8"
 prometheus-client = "0.24.0"
+ltr390 = { version = "0.1.0", path = "../ltr390" }

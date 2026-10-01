@@ -396,6 +396,9 @@ fn set_brightness(args: &Args, set_args: &SetBrightnessArgs) -> anyhow::Result<(
 fn test(_args: &Args) -> anyhow::Result<()> {
     // ...
 
+    #[allow(unused)]
+    use ltr390::LTR390;
+    #[allow(unused)]
     use tsl2591::TSL2591;
 
     use ftdi_embedded_hal as hal;
@@ -403,17 +406,25 @@ fn test(_args: &Args) -> anyhow::Result<()> {
         .interface(ftdi::Interface::Any)
         .open()?;
     let i2c = hal::FtHal::init_default(device)?.i2c()?;
-    let mut sensor = TSL2591::from_i2c(i2c)?;
 
-    // sensor.enable()?;
+    // let mut sensor = TSL2591::from_i2c(i2c)?;
+
+    let mut sensor = LTR390::from_i2c(i2c)?;
+    for i in 0..100 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        println!("i={i}");
+        if sensor.is_ready()? {
+            println!("ready after {i} iterations");
+            break;
+        }
+    }
 
     let brightness = sensor.read_brightness()?;
-
     println!("brightness = {brightness:?}");
-    sensor.debug_print();
 
-    sensor.debug_read_all();
-
+    // println!("brightness = {brightness:?}");
+    // sensor.debug_print();
+    // sensor.debug_read_all(0x00..0x20);
 
     Ok(())
 }

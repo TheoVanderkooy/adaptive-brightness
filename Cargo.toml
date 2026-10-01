@@ -4,6 +4,7 @@ members = [
     "brightness-server",
     "common",
     "control",
+    "ltr390",
     "tsl2591",
     "ui"
 ]

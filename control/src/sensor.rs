@@ -9,6 +9,7 @@ use smol::{
     net::unix::UnixStream as AsyncUnixStream,
 };
 
+use ltr390::LTR390;
 use tsl2591::TSL2591;
 
 use ftdi_embedded_hal as hal;
@@ -19,26 +20,43 @@ use crate::config::{self};
 pub(crate) enum Sensor {
     Socket(UnixStream),
     AsyncSocket(AsyncUnixStream),
-    Tsl2591(TSL2591<ftdi_embedded_hal::I2c<ftdi::Device>>),
+    Tsl2591(TSL2591<hal::I2c<ftdi::Device>>),
+    Ltr390(LTR390<hal::I2c<ftdi::Device>>),
 }
 
+#[derive(Debug)]
 pub enum SensorType<'a, T: AsRef<Path>> {
     Open(config::SensorType),
     Socket { socket_path: &'a T },
 }
 
 impl Sensor {
-    /// Open the physical sensor directly.
-    fn open_tsl2591() -> anyhow::Result<Self> {
+    /// Open an i2c device through a ft232h chip
+    fn open_ft232h() -> anyhow::Result<hal::I2c<ftdi::Device>> {
         // vid/pid are for the FTDI device, there are a few others that could be used instead
         // hardcoded for now
         let device = ftdi::find_by_vid_pid(0x0403, 0x6014)
             .interface(ftdi::Interface::Any)
             .open()?;
         let i2c = hal::FtHal::init_default(device)?.i2c()?;
+
+        Ok(i2c)
+    }
+
+    /// Open the physical TSL2591 sensor directly.
+    fn open_tsl2591() -> anyhow::Result<Self> {
+        let i2c = Self::open_ft232h()?;
         let sensor = TSL2591::from_i2c(i2c)?;
 
         Ok(Self::Tsl2591(sensor))
+    }
+
+    /// Open the physical LTR390 sensor directly.
+    fn open_ltr390() -> anyhow::Result<Self> {
+        let i2c = Self::open_ft232h()?;
+        let sensor = LTR390::from_i2c(i2c)?;
+
+        Ok(Self::Ltr390(sensor))
     }
 
     /// If specified, open the given socket to read brightness values.
@@ -46,6 +64,7 @@ impl Sensor {
     pub fn open<T: AsRef<Path>>(sensor: SensorType<T>) -> anyhow::Result<Self> {
         match sensor {
             SensorType::Open(config::SensorType::FT232H_TSL2591) => Self::open_tsl2591(),
+            SensorType::Open(config::SensorType::FT232H_LTR390) => Self::open_ltr390(),
             SensorType::Socket { socket_path } => {
                 Ok(Self::Socket(UnixStream::connect(socket_path)?))
             }
@@ -57,6 +76,7 @@ impl Sensor {
     pub fn open_async<T: AsRef<Path>>(sensor: SensorType<T>) -> anyhow::Result<Self> {
         match sensor {
             SensorType::Open(config::SensorType::FT232H_TSL2591) => Self::open_tsl2591(),
+            SensorType::Open(config::SensorType::FT232H_LTR390) => Self::open_ltr390(),
             SensorType::Socket { socket_path } => Ok(Self::AsyncSocket(smol::block_on(
                 AsyncUnixStream::connect(socket_path),
             )?)),
@@ -89,6 +109,7 @@ impl Sensor {
                 })
             }
             Sensor::Tsl2591(sensor) => sensor.read_lux(),
+            Sensor::Ltr390(sensor) => sensor.read_lux(),
         }
     }
 
@@ -115,6 +136,7 @@ impl Sensor {
                 Ok(f64::from_be_bytes(buf))
             }
             Sensor::Tsl2591(sensor) => sensor.read_lux(),
+            Sensor::Ltr390(sensor) => sensor.read_lux(),
         }
     }
 }
